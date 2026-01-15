@@ -1,42 +1,48 @@
+# users/models.py
 from django.db import models
+from django.contrib.auth.models import AbstractUser
 
+# NOTE: If you are using a custom user model, you should inherit from AbstractUser
+# If RecycleUser is your main user, it's best to define it like this:
 
-class RecycleUser(models.Model):
-    user_id = models.AutoField(primary_key=True)  # Changed from default 'id'
+class RecycleUser(AbstractUser):
+    # We disable the default 'username' field and use email instead if you prefer,
+    # or we keep username but make email unique. Let's keep it simple:
+    
+    # Custom fields
     full_name = models.CharField(max_length=100)
-    email = models.EmailField(max_length=100, unique=True)
     phone = models.CharField(max_length=20, null=True, blank=True)
-    password_hash = models.CharField(max_length=255)
     address = models.CharField(max_length=255, null=True, blank=True)
-    role = models.CharField(
-        max_length=20,
-        choices=[
-            ('resident', 'Resident'),
-            ('service_provider', 'Service Provider'),
-            ('admin', 'Admin')
-        ],
-        default='resident'
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Role Field
+    ROLE_CHOICES = [
+        ('resident', 'Resident'),
+        ('service_provider', 'Service Provider'),
+        ('admin', 'Admin')
+    ]
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='resident')
+
+    # Fix conflicts with default Django User model
+    email = models.EmailField(unique=True) # Enforce unique email
 
     class Meta:
-        managed = False
         db_table = 'users'
 
     def __str__(self):
-        return self.full_name
+        return self.username  # AbstractUser uses username by default
 
 
 class ServiceProvider(models.Model):
-    provider_id = models.AutoField(primary_key=True)  # Added
-    user = models.ForeignKey(RecycleUser, on_delete=models.CASCADE, db_column='user_id')
-    company_name = models.CharField(max_length=150)  # Was 'service_name'
-    service_type = models.CharField(max_length=100, null=True, blank=True)  # Added
+    provider_id = models.AutoField(primary_key=True)
+    # Use string reference to avoid circular imports within the same app if needed
+    user = models.ForeignKey('RecycleUser', on_delete=models.CASCADE, db_column='user_id')
+    company_name = models.CharField(max_length=150)
+    service_type = models.CharField(max_length=100, null=True, blank=True)
     location = models.CharField(max_length=255, null=True, blank=True)
     license_number = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
-        managed = False
+        # managed = False <-- REMOVE THIS
         db_table = 'service_providers'
 
     def __str__(self):
@@ -44,15 +50,15 @@ class ServiceProvider(models.Model):
 
 
 class Review(models.Model):
-    review_id = models.AutoField(primary_key=True)  # Added
-    provider = models.ForeignKey(ServiceProvider, on_delete=models.CASCADE, db_column='provider_id')  # Fixed name
-    user = models.ForeignKey(RecycleUser, on_delete=models.CASCADE, db_column='user_id')
+    review_id = models.AutoField(primary_key=True)
+    provider = models.ForeignKey(ServiceProvider, on_delete=models.CASCADE, db_column='provider_id')
+    user = models.ForeignKey('RecycleUser', on_delete=models.CASCADE, db_column='user_id')
     rating = models.IntegerField()
     comment = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
+        # managed = False <-- REMOVE THIS
         db_table = 'reviews'
 
     def __str__(self):
@@ -60,13 +66,13 @@ class Review(models.Model):
 
 
 class AdminLog(models.Model):
-    log_id = models.AutoField(primary_key=True)  # Added
-    user = models.ForeignKey(RecycleUser, on_delete=models.CASCADE, db_column='user_id')  # Renamed from admin_user
+    log_id = models.AutoField(primary_key=True)
+    user = models.ForeignKey('RecycleUser', on_delete=models.CASCADE, db_column='user_id')
     action = models.CharField(max_length=255)
-    created_at = models.DateTimeField(auto_now_add=True)  # Was 'timestamp'
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
+        # managed = False <-- REMOVE THIS
         db_table = 'admin_logs'
 
     def __str__(self):

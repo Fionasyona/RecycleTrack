@@ -1,30 +1,48 @@
 from rest_framework import serializers
-# FIX: Import 'RecycleUser' instead of 'User'
-from .models import RecycleUser, ServiceProvider, Review, AdminLog
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-class RecycleUserSerializer(serializers.ModelSerializer):
+User = get_user_model()
+
+# --- 1. USER SERIALIZER (For Registration) ---
+class UserSerializer(serializers.ModelSerializer):
     class Meta:
-        model = RecycleUser
-        fields = ['user_id', 'full_name', 'email', 'phone', 'role', 'address', 'created_at']
+        model = User
+        fields = ['id', 'email', 'full_name', 'password', 'role', 'phone', 'address']
+        extra_kwargs = {'password': {'write_only': True}}
 
-class ServiceProviderSerializer(serializers.ModelSerializer):
-    # Optional: Display user details inside the provider object
-    user_details = RecycleUserSerializer(source='user', read_only=True)
+    def create(self, validated_data):
+        email = validated_data['email']
+        
+        # FIX: We pass 'username=email' to satisfy Django's requirement
+        user = User.objects.create_user(
+            username=email, 
+            email=email,
+            password=validated_data['password'],
+            full_name=validated_data.get('full_name', ''),
+            phone=validated_data.get('phone', ''),
+            address=validated_data.get('address', ''),
+            role=validated_data.get('role', 'resident')
+        )
+        return user
 
-    class Meta:
-        model = ServiceProvider
-        fields = '__all__'
+# --- 2. LOGIN SERIALIZER (Restored!) ---
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        # Map 'email' to 'username' so Django doesn't crash
+        if 'email' in attrs:
+            attrs['username'] = attrs['email']
 
-class ReviewSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source='user.full_name', read_only=True)
+        # Standard Django validation
+        data = super().validate(attrs)
 
-    class Meta:
-        model = Review
-        fields = '__all__'
-
-class AdminLogSerializer(serializers.ModelSerializer):
-    admin_name = serializers.CharField(source='user.full_name', read_only=True)
-
-    class Meta:
-        model = AdminLog
-        fields = '__all__'
+        # Add custom data to the response
+        data['user'] = {
+            'id': self.user.id,
+            'email': self.user.email,
+            'full_name': self.user.full_name,
+            'role': self.user.role,
+            'is_superuser': self.user.is_superuser
+        }
+        
+        return data

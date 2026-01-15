@@ -37,13 +37,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',
+    'rest_framework', 
+    'rest_framework_simplejwt',   
     'corsheaders',
     'users',
     'waste',
     'badges',
     'notifications',
     'rewards',
+    'gamification',
+    'map',
+    'education',
+    'recycling',
 ]
 
 MIDDLEWARE = [
@@ -80,13 +85,14 @@ WSGI_APPLICATION = 'recycletrack_backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# NEW CODE (For XAMPP MySQL)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'recycletrack_db',
-        'USER': 'recycletrack_user',
-        'PASSWORD': 'fionawambua5@',
-        'HOST': 'localhost',
+        'NAME': 'Recycletrack',  # <--- MUST match the name you created in phpMyAdmin exactly
+        'USER': 'root',
+        'PASSWORD': '',          # Leave empty for XAMPP
+        'HOST': '127.0.0.1',
         'PORT': '3306',
     }
 }
@@ -134,4 +140,32 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # Vite dev server
+    "http://127.0.0.1:5173",  # Alternative localhost
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+# REST Framework Configuration
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+# JWT Configuration
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+# Tell Django to use our custom user model
+AUTH_USER_MODEL = 'users.RecycleUser'

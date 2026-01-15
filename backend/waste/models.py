@@ -1,14 +1,16 @@
+# waste/models.py
 from django.db import models
-from users.models import RecycleUser, ServiceProvider
-
+from django.conf import settings # <--- FIXED
+# You can keep ServiceProvider import if it's in a separate app, or use string reference 'users.ServiceProvider'
+from users.models import ServiceProvider 
 
 class WasteCategory(models.Model):
-    category_id = models.AutoField(primary_key=True)  # Added
-    category_name = models.CharField(max_length=100)  # Was 'name'
+    category_id = models.AutoField(primary_key=True)
+    category_name = models.CharField(max_length=100)
     description = models.TextField(null=True, blank=True)
 
     class Meta:
-        managed = False
+        # managed = False
         db_table = 'waste_categories'
 
     def __str__(self):
@@ -16,14 +18,20 @@ class WasteCategory(models.Model):
 
 
 class DisposalReport(models.Model):
-    report_id = models.AutoField(primary_key=True)  # Added
-    user = models.ForeignKey(RecycleUser, on_delete=models.CASCADE, db_column='user_id')
-    provider = models.ForeignKey(ServiceProvider, on_delete=models.SET_NULL, null=True, blank=True, db_column='provider_id')  # Changed name
+    report_id = models.AutoField(primary_key=True)
+    
+    # <--- FIXED
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_column='user_id')
+    
+    # If ServiceProvider is in 'users' app, this import is usually fine, 
+    # but string reference is safer: 'users.ServiceProvider'
+    provider = models.ForeignKey(ServiceProvider, on_delete=models.SET_NULL, null=True, blank=True, db_column='provider_id')
+    
     category = models.ForeignKey(WasteCategory, on_delete=models.CASCADE, db_column='category_id')
     image_url = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     location = models.CharField(max_length=255, null=True, blank=True)
-    status = models.CharField(  # Added
+    status = models.CharField(
         max_length=20,
         choices=[
             ('pending', 'Pending'),
@@ -35,8 +43,8 @@ class DisposalReport(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
+        # managed = False
         db_table = 'disposal_reports'
 
     def __str__(self):
-        return f"Report by {self.user.full_name} - {self.status}"
+        return f"Report by {self.user} - {self.status}"

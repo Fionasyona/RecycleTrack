@@ -1,11 +1,13 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import RecycleUserViewSet, ServiceProviderViewSet
-
-router = DefaultRouter()
-router.register(r'accounts', RecycleUserViewSet)       # api/users/accounts/
-router.register(r'providers', ServiceProviderViewSet)  # api/users/providers/
+from django.urls import path
+from .views import CustomTokenObtainPairView, register_user, get_user_profile
 
 urlpatterns = [
-    path('', include(router.urls)),
+    # --- FIX IS HERE ---
+    # Changed 'auth/register/' to 'register/' to match your frontend call
+    path('register/', register_user, name='register'),
+    
+    # Login can stay as 'auth/login/' if your frontend calls that correctly
+    path('auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    
+    path('profile/', get_user_profile, name='user-profile'),
 ]
