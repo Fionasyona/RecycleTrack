@@ -141,4 +141,11 @@ export const articleAPI = {
   getCategories: () => api.get("/education/articles/categories/"),
 };
 
+export const centerAPI = {
+  getAll: () => api.get("/centers/locations/"),
+  create: (data) => api.post("/centers/locations/", data),
+  update: (id, data) => api.patch(`/centers/locations/${id}/`, data),
+  delete: (id) => api.delete(`/centers/locations/${id}/`),
+};
+
 export default api;

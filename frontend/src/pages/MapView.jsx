@@ -1,297 +1,247 @@
-// src/pages/MapView.jsx
-import { useState, useEffect } from "react";
-import { MapPin, Search, Filter, Navigation2 } from "lucide-react";
-import RecyclingMap from "../components/maps/RecyclingMap";
-import mapService from "../services/mapService";
-import { Button } from "../components/common/Button";
+import React, { useState, useEffect } from "react";
+import { centerAPI } from "../services/api";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapPin, Navigation, Phone, Globe } from "lucide-react";
+import L from "leaflet";
+import toast from "react-hot-toast";
+import "leaflet/dist/leaflet.css"; // Ensure CSS is imported
+
+// --- LEAFLET ICON FIX ---
+import icon from "leaflet/dist/images/marker-icon.png";
+import iconShadow from "leaflet/dist/images/marker-shadow.png";
+
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+// Custom Icon for User Location (Gold/Yellow)
+const userIcon = new L.Icon({
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-gold.png",
+  shadowUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+// --- NEW HELPER: Handles Flying to Locations ---
+// This component watches for changes in "targetCenter" and moves the map automatically
+const FlyToLocation = ({ targetCenter }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (targetCenter) {
+      map.flyTo(targetCenter, 15, {
+        animate: true,
+        duration: 1.5, // Smooth flight duration
+      });
+    }
+  }, [targetCenter, map]);
+
+  return null;
+};
 
 const MapView = () => {
   const [centers, setCenters] = useState([]);
-  const [filteredCenters, setFilteredCenters] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedType, setSelectedType] = useState("all");
-  const [showActivities, setShowActivities] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
 
-  // --- Helper Functions (Defined locally to avoid service errors) ---
+  // This state controls where the map looks.
+  // It changes when you click the sidebar OR find your location.
+  const [viewPosition, setViewPosition] = useState(null);
 
-  // Calculate distance between two points (Haversine formula)
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+  // Track which center is selected to highlight it in the sidebar
+  const [selectedCenterId, setSelectedCenterId] = useState(null);
 
-    const R = 6371; // Radius of the earth in km
-    const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(deg2rad(lat1)) *
-        Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
-  };
+  // Default center (Nairobi)
+  const defaultCenter = [-1.2921, 36.8219];
 
-  const deg2rad = (deg) => {
-    return deg * (Math.PI / 180);
-  };
+  useEffect(() => {
+    fetchCenters();
+    getUserLocation();
+  }, []);
 
-  const formatDistance = (km) => {
-    if (km < 1) return `${Math.round(km * 1000)}m`;
-    return `${km.toFixed(1)}km`;
-  };
-
-  // --- Main Logic ---
-
-  const loadCenters = async () => {
+  const fetchCenters = async () => {
     try {
-      // FIX 1: Use 'getCenters' (matching your service file)
-      const response = await mapService.getCenters();
-      // FIX 2: Handle response structure safely
-      const data = response.data || response || [];
-      setCenters(data);
-      setFilteredCenters(data);
+      const res = await centerAPI.getAll();
+      setCenters(Array.isArray(res) ? res : res.results || []);
     } catch (error) {
-      console.error("Error loading centers:", error);
+      console.error("Map Error:", error);
+      toast.error("Could not load recycling centers");
     }
   };
 
   const getUserLocation = () => {
-    if ("geolocation" in navigator) {
+    if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setUserLocation({ lat, lng });
+
+          // Automatically fly to user location on load
+          setViewPosition([lat, lng]);
         },
-        (error) => console.log("Location error:", error)
+        (error) => {
+          console.log("Location access denied:", error);
+          toast("Enable location to see centers near you", { icon: "📍" });
+        }
       );
     }
   };
 
-  const filterCenters = () => {
-    let filtered = centers;
-
-    // Filter by type
-    if (selectedType !== "all") {
-      filtered = filtered.filter((c) => c.type === selectedType);
-    }
-
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((c) => {
-        // Safe check for services (handle string vs object)
-        const hasService =
-          c.services &&
-          c.services.some((s) => {
-            const serviceName = typeof s === "string" ? s : s.service_name;
-            return serviceName.toLowerCase().includes(query);
-          });
-
-        return (
-          c.name.toLowerCase().includes(query) ||
-          c.address.toLowerCase().includes(query) ||
-          hasService
-        );
-      });
-    }
-
-    setFilteredCenters(filtered);
+  // Handler for clicking a sidebar item
+  const handleCenterClick = (center) => {
+    // 1. Set the map target to this center's coordinates
+    setViewPosition([center.latitude, center.longitude]);
+    // 2. Set active ID for highlighting
+    setSelectedCenterId(center.id);
   };
-
-  const getNearbyCenter = async () => {
-    if (!userLocation) {
-      alert("Please enable location services to find nearby centers");
-      return;
-    }
-
-    try {
-      // FIX 3: Use 'getNearbyCenters' (plural)
-      const response = await mapService.getNearbyCenters(
-        userLocation.lat,
-        userLocation.lng
-      );
-      const data = response.data || response || [];
-      setFilteredCenters(data);
-    } catch (error) {
-      console.error("Error finding nearby centers:", error);
-    }
-  };
-
-  useEffect(() => {
-    loadCenters();
-    getUserLocation();
-  }, []);
-
-  useEffect(() => {
-    filterCenters();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, selectedType, centers]);
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-primary-600 p-3 rounded-xl">
-              <MapPin className="text-white" size={28} />
-            </div>
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900">
-                Recycling Map
-              </h1>
-              <p className="text-gray-600">
-                Find recycling centers and collection points near you
-              </p>
-            </div>
-          </div>
+    <div className="h-[calc(100vh-64px)] relative flex flex-col md:flex-row">
+      {/* --- SIDEBAR LIST --- */}
+      <div className="hidden md:flex flex-col w-80 bg-white border-r border-gray-200 shadow-xl z-[1000] overflow-y-auto">
+        <div className="p-4 bg-green-600 text-white">
+          <h2 className="font-bold text-lg flex items-center gap-2">
+            <MapPin className="w-5 h-5" /> Recycling Points
+          </h2>
+          <p className="text-xs text-green-100 mt-1">
+            {centers.length} locations available
+          </p>
         </div>
-
-        {/* Controls */}
-        <div className="bg-white rounded-xl shadow-md p-4 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            {/* Search */}
-            <div className="flex-1 relative">
-              <Search
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-                size={20}
-              />
-              <input
-                type="text"
-                placeholder="Search by name, location, or service..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Type Filter */}
-            <div className="relative">
-              <Filter
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-                size={20}
-              />
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                className="pl-10 pr-8 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none bg-white cursor-pointer"
-              >
-                <option value="all">All Types</option>
-                <option value="recycling_center">Recycling Centers</option>
-                <option value="collection_point">Collection Points</option>
-              </select>
-            </div>
-
-            {/* Nearby Button */}
-            <Button onClick={getNearbyCenter} className="whitespace-nowrap">
-              <Navigation2 size={18} />
-              Find Nearby
-            </Button>
-
-            {/* Toggle Activities */}
-            <Button
-              variant={showActivities ? "primary" : "outline"}
-              onClick={() => setShowActivities(!showActivities)}
-              className="whitespace-nowrap"
+        <div className="divide-y divide-gray-100">
+          {centers.map((center) => (
+            <div
+              key={center.id}
+              onClick={() => handleCenterClick(center)} // <--- CLICK HANDLER
+              className={`p-4 transition cursor-pointer hover:bg-green-50 ${
+                selectedCenterId === center.id
+                  ? "bg-green-50 border-l-4 border-green-500"
+                  : ""
+              }`}
             >
-              {showActivities ? "Hide" : "Show"} My Activities
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Map */}
-          <div className="lg:col-span-2">
-            <RecyclingMap
-              showUserLocation={true}
-              showRecyclingCenters={true}
-              showUserActivities={showActivities}
-              height="600px"
-            />
-          </div>
-
-          {/* Sidebar - List of Centers */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl shadow-md p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">
-                  Locations ({filteredCenters.length})
-                </h2>
-              </div>
-
-              <div className="space-y-3 max-h-[550px] overflow-y-auto">
-                {filteredCenters.length > 0 ? (
-                  filteredCenters.map((center, idx) => (
-                    <div
-                      // FIX 4: Add fallback key to prevent console errors
-                      key={center.id || idx}
-                      className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer hover:border-primary-300"
+              <h3 className="font-semibold text-gray-800">{center.name}</h3>
+              <p className="text-sm text-gray-500 mt-1">{center.address}</p>
+              <div className="flex flex-wrap gap-1 mt-2">
+                {center.accepted_materials
+                  .split(",")
+                  .slice(0, 3)
+                  .map((mat, i) => (
+                    <span
+                      key={i}
+                      className="text-[10px] bg-white border border-green-100 text-green-700 px-1.5 py-0.5 rounded"
                     >
-                      <div className="flex items-start gap-3">
-                        <span className="text-2xl">
-                          {center.type === "recycling_center" ? "🏭" : "📦"}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900 mb-1 truncate">
-                            {center.name}
-                          </h3>
-                          <p className="text-sm text-gray-600 mb-2">
-                            {center.address}
-                          </p>
-
-                          {/* Services */}
-                          <div className="flex flex-wrap gap-1 mb-2">
-                            {center.services &&
-                              center.services
-                                .slice(0, 3)
-                                .map((service, sIdx) => (
-                                  <span
-                                    key={sIdx}
-                                    className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded"
-                                  >
-                                    {typeof service === "string"
-                                      ? service
-                                      : service.service_name}
-                                  </span>
-                                ))}
-                          </div>
-
-                          {/* Rating & Distance */}
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-yellow-600 font-semibold">
-                              ⭐ {center.rating || "N/A"}
-                            </span>
-                            {userLocation && (
-                              <span className="text-gray-600">
-                                {formatDistance(
-                                  calculateDistance(
-                                    userLocation.lat,
-                                    userLocation.lng,
-                                    center.latitude || center.lat,
-                                    center.longitude || center.lng
-                                  )
-                                )}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-12 text-gray-500">
-                    <MapPin size={48} className="mx-auto mb-3 opacity-30" />
-                    <p className="text-sm">No locations found</p>
-                    <p className="text-xs mt-1">Try adjusting your filters</p>
-                  </div>
-                )}
+                      {mat.trim()}
+                    </span>
+                  ))}
               </div>
             </div>
-          </div>
+          ))}
         </div>
+      </div>
+
+      {/* --- MAP CONTAINER --- */}
+      <div className="flex-1 relative z-0">
+        <MapContainer
+          center={defaultCenter}
+          zoom={12}
+          style={{ height: "100%", width: "100%" }}
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="© OpenStreetMap contributors"
+          />
+
+          {/* This invisible component handles the flying animation */}
+          <FlyToLocation targetCenter={viewPosition} />
+
+          {/* User Marker */}
+          {userLocation && (
+            <Marker
+              position={[userLocation.lat, userLocation.lng]}
+              icon={userIcon}
+            >
+              <Popup>
+                <div className="text-center p-1">
+                  <strong className="text-indigo-600">You are here</strong>
+                </div>
+              </Popup>
+            </Marker>
+          )}
+
+          {/* Recycling Center Markers */}
+          {centers.map((center) => (
+            <Marker
+              key={center.id}
+              position={[center.latitude, center.longitude]}
+            >
+              <Popup>
+                <div className="min-w-[200px]">
+                  {center.image && (
+                    <img
+                      src={center.image}
+                      alt={center.name}
+                      className="w-full h-24 object-cover rounded-t-lg mb-2"
+                    />
+                  )}
+                  <h3 className="font-bold text-base text-gray-900">
+                    {center.name}
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-2">{center.address}</p>
+
+                  <div className="space-y-1 mb-3">
+                    {center.phone && (
+                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <Phone className="w-3 h-3" /> {center.phone}
+                      </div>
+                    )}
+                    {center.website && (
+                      <div className="flex items-center gap-2 text-xs text-blue-600">
+                        <Globe className="w-3 h-3" />
+                        <a
+                          href={center.website}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Visit Website
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-green-50 p-2 rounded text-xs text-green-800">
+                    <strong>Accepts:</strong> {center.accepted_materials}
+                  </div>
+
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${center.latitude},${center.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block w-full text-center mt-3 bg-green-600 text-white py-1.5 rounded text-sm hover:bg-green-700 transition"
+                  >
+                    Get Directions
+                  </a>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+
+        {/* Mobile: Find Me Button */}
+        <button
+          onClick={() => getUserLocation()}
+          className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-gray-700 hover:bg-gray-50 border border-gray-200"
+          title="Find My Location"
+        >
+          <Navigation className="w-6 h-6" />
+        </button>
       </div>
     </div>
   );
