@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'map',
     'education',
     'recycling',
+    'centers',
 ]
 
 MIDDLEWARE = [

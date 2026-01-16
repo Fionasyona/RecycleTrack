@@ -50,6 +50,9 @@ urlpatterns = [
     # Connect the Recycling App
     path('api/recycling/', include('recycling.urls')),
 
+    # Connect the Centers App
+    path('api/centers/', include('centers.urls')),
+
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
