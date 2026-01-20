@@ -1,194 +1,143 @@
-import React, { useState, useEffect } from "react";
-import { adminService } from "../services/adminService";
-import { toast } from "react-hot-toast";
-import { TrendingUp, Users, Trash2, DollarSign } from "lucide-react";
+import React, { useState } from "react";
+import { api } from "../services/api";
+import toast from "react-hot-toast";
+import { User, CheckCircle, Search, Trophy, ShieldCheck } from "lucide-react";
 
 const AdminDashboard = () => {
-  // --- Stats State (Mock for now, connect to API later) ---
-  const stats = [
-    {
-      title: "Total Users",
-      value: "1,240",
-      icon: <Users />,
-      color: "bg-blue-500",
-    },
-    {
-      title: "Total Recycled",
-      value: "45.2 Tons",
-      icon: <Trash2 />,
-      color: "bg-green-500",
-    },
-    {
-      title: "Payouts Processed",
-      value: "$12,450",
-      icon: <DollarSign />,
-      color: "bg-yellow-500",
-    },
-    {
-      title: "Active Centers",
-      value: "8",
-      icon: <TrendingUp />,
-      color: "bg-purple-500",
-    },
-  ];
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [lastSuccess, setLastSuccess] = useState(null);
 
-  // --- Waste Category Logic (Real Data) ---
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [newCategory, setNewCategory] = useState({
-    name: "",
-    price_per_kg: "",
-  });
+  const handleAwardPoints = async (e) => {
+    e.preventDefault();
+    if (!email) return toast.error("Please enter a user email");
 
-  useEffect(() => {
-    loadCategories();
-  }, []);
+    setLoading(true);
+    setLastSuccess(null);
 
-  const loadCategories = async () => {
     try {
-      const data = await adminService.getWasteCategories();
-      setCategories(data);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load waste categories");
+      // Calls the endpoint: /users/award-points/
+      const res = await api.post("/users/award-points/", { email });
+
+      toast.success("Points awarded successfully!");
+      setLastSuccess(res.data);
+      setEmail("");
+    } catch (error) {
+      console.error(error);
+      const msg =
+        error.response?.data?.error ||
+        "Could not find that user or server error.";
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddCategory = async (e) => {
-    e.preventDefault();
-    try {
-      await adminService.addWasteCategory(newCategory);
-      toast.success("Category added successfully");
-      setNewCategory({ name: "", price_per_kg: "" });
-      loadCategories();
-    } catch (err) {
-      toast.error("Failed to add category");
-    }
-  };
-
-  const handleDeleteCategory = async (id) => {
-    if (window.confirm("Are you sure? This action cannot be undone.")) {
-      try {
-        await adminService.deleteWasteCategory(id);
-        toast.success("Category deleted");
-        loadCategories();
-      } catch (err) {
-        toast.error("Failed to delete category");
-      }
-    }
-  };
-
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6 text-slate-800">Admin Overview</h1>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-        {stats.map((stat, index) => (
-          <div
-            key={index}
-            className="bg-white p-6 rounded-xl shadow-sm flex items-center gap-4"
-          >
-            <div className={`${stat.color} p-4 rounded-full text-white`}>
-              {stat.icon}
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">{stat.title}</p>
-              <h3 className="text-2xl font-bold text-slate-800">
-                {stat.value}
-              </h3>
-            </div>
-          </div>
-        ))}
+    <div className="max-w-4xl mx-auto p-6 space-y-8">
+      {/* Header - Now Green */}
+      <div className="bg-green-800 text-white p-8 rounded-2xl shadow-xl flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <ShieldCheck className="w-8 h-8 text-yellow-400" /> Admin Console
+          </h1>
+          <p className="text-green-100 mt-2 opacity-90">
+            Manage recycling verifications and system stats.
+          </p>
+        </div>
       </div>
 
-      {/* Waste Management Section */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-slate-800">
-            Waste Pricing Manager
-          </h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* 1. AWARD POINTS FORM */}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-100 bg-gray-50">
+            <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              Verify Drop-off
+            </h2>
+          </div>
+
+          <div className="p-6">
+            <form onSubmit={handleAwardPoints} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Resident Email Address
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+                  <input
+                    type="email"
+                    placeholder="resident@gmail.com"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none transition"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Enter the exact email the user registered with.
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className={`w-full py-3 rounded-lg font-bold text-white text-lg shadow-md transition-all ${
+                  loading
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-green-600 hover:bg-green-700 hover:shadow-lg"
+                }`}
+              >
+                {loading ? "Processing..." : "Confirm Recycle (+20 pts)"}
+              </button>
+            </form>
+          </div>
         </div>
 
-        {/* Add Form */}
-        <form
-          onSubmit={handleAddCategory}
-          className="bg-slate-50 p-4 rounded-lg mb-6 flex gap-4 items-end"
-        >
-          <div className="flex-1">
-            <label className="block text-sm font-medium mb-1">
-              Category Name
-            </label>
-            <input
-              className="w-full border rounded-md px-3 py-2"
-              placeholder="e.g. Aluminum Cans"
-              value={newCategory.name}
-              onChange={(e) =>
-                setNewCategory({ ...newCategory, name: e.target.value })
-              }
-              required
-            />
-          </div>
-          <div className="w-32">
-            <label className="block text-sm font-medium mb-1">
-              Price / Kg ($)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              className="w-full border rounded-md px-3 py-2"
-              placeholder="0.00"
-              value={newCategory.price_per_kg}
-              onChange={(e) =>
-                setNewCategory({ ...newCategory, price_per_kg: e.target.value })
-              }
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            className="bg-slate-900 text-white px-6 py-2 rounded-md hover:bg-slate-800 transition"
-          >
-            Add New
-          </button>
-        </form>
+        {/* 2. SUCCESS DISPLAY & INFO */}
+        <div className="space-y-6">
+          {lastSuccess ? (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-6 flex flex-col items-center text-center animate-fade-in">
+              <div className="bg-white p-4 rounded-full shadow-sm text-yellow-500 mb-4">
+                <Trophy className="w-10 h-10" />
+              </div>
+              <h3 className="text-xl font-bold text-green-900">
+                Verification Successful!
+              </h3>
+              <p className="text-green-800 mt-1">
+                Points have been added to the user's account.
+              </p>
 
-        {/* Table */}
-        {loading ? (
-          <p>Loading data...</p>
-        ) : (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b text-sm text-gray-500">
-                <th className="py-3">Category Name</th>
-                <th className="py-3">Current Price</th>
-                <th className="py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((cat) => (
-                <tr key={cat.id} className="border-b hover:bg-gray-50">
-                  <td className="py-3 font-medium text-slate-700">
-                    {cat.name}
-                  </td>
-                  <td className="py-3 text-green-600 font-bold">
-                    ${cat.price_per_kg} / kg
-                  </td>
-                  <td className="py-3 text-right">
-                    <button
-                      onClick={() => handleDeleteCategory(cat.id)}
-                      className="text-red-500 hover:text-red-700 text-sm font-medium"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              <div className="mt-4 w-full bg-white p-4 rounded-lg shadow-sm border border-green-100 text-left">
+                <p className="text-sm text-gray-500">New Balance</p>
+                <p className="text-2xl font-bold text-gray-800">
+                  {lastSuccess.new_total} pts
+                </p>
+                <div className="h-px bg-gray-100 my-2"></div>
+                <p className="text-sm text-gray-500">Current Badge</p>
+                <p className="text-lg font-bold text-green-600">
+                  {lastSuccess.new_badge}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-gray-700">
+              <h3 className="font-bold flex items-center gap-2 mb-2 text-green-800">
+                <ShieldCheck className="w-4 h-4" /> Instructions
+              </h3>
+              <ul className="text-sm space-y-2 list-disc list-inside opacity-80">
+                <li>Ask the resident for their registered email.</li>
+                <li>
+                  Ensure they have physically dropped off the recyclables.
+                </li>
+                <li>
+                  Click verify to instantly credit <strong>20 points</strong> to
+                  their account.
+                </li>
+                <li>The leaderboard updates automatically.</li>
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

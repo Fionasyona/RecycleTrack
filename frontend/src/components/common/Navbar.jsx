@@ -5,7 +5,7 @@ import {
   Home,
   Map,
   BookOpen,
-  Trophy,
+  LayoutDashboard,
   User,
   LogOut,
   Menu,
@@ -20,8 +20,14 @@ const Navbar = () => {
 
   const navigation = [
     { name: "Home", href: "/", icon: Home },
-    { name: "Dashboard", href: "/dashboard", icon: Trophy, protected: true },
-    { name: "Map", href: "/maps", icon: Map },
+    {
+      name: "Dashboard",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+      protected: true,
+    },
+    { name: "Map", href: "/maps", icon: Map, protected: true },
+    // Leaderboard removed (now inside Dashboard)
     { name: "Education", href: "/education", icon: BookOpen },
   ];
 
@@ -31,9 +37,9 @@ const Navbar = () => {
     <nav className="bg-white shadow-md sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          
+          {/* LOGO */}
           <Link to="/" className="flex items-center gap-2">
-            <div className="bg-primary-600 p-2 rounded-lg">
+            <div className="bg-green-600 p-2 rounded-lg">
               <Leaf className="w-6 h-6 text-white" />
             </div>
             <span className="text-xl font-bold text-gray-900">
@@ -41,7 +47,7 @@ const Navbar = () => {
             </span>
           </Link>
 
-          
+          {/* DESKTOP NAVIGATION */}
           <div className="hidden md:flex items-center gap-6">
             {navigation.map((item) => {
               // Hide protected routes if not authenticated
@@ -54,7 +60,7 @@ const Navbar = () => {
                   to={item.href}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
                     isActive(item.href)
-                      ? "bg-primary-50 text-primary-600 font-medium"
+                      ? "bg-green-50 text-green-600 font-medium"
                       : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                   }`}
                 >
@@ -65,7 +71,7 @@ const Navbar = () => {
             })}
           </div>
 
-         
+          {/* USER ACTIONS (Desktop) */}
           <div className="hidden md:flex items-center gap-3">
             {user ? (
               <>
@@ -73,7 +79,7 @@ const Navbar = () => {
                   to="/profile"
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
                     isActive("/profile")
-                      ? "bg-primary-50 text-primary-600"
+                      ? "bg-green-50 text-green-600"
                       : "text-gray-600 hover:bg-gray-100"
                   }`}
                 >
@@ -98,7 +104,7 @@ const Navbar = () => {
                 </Link>
                 <Link
                   to="/register"
-                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
                 >
                   Sign Up
                 </Link>
@@ -106,7 +112,7 @@ const Navbar = () => {
             )}
           </div>
 
-          
+          {/* MOBILE MENU BUTTON */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100"
@@ -116,7 +122,7 @@ const Navbar = () => {
         </div>
       </div>
 
-      
+      {/* MOBILE MENU DROPDOWN */}
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-gray-200 bg-white">
           <div className="px-4 py-3 space-y-1">
@@ -131,7 +137,7 @@ const Navbar = () => {
                   onClick={() => setMobileMenuOpen(false)}
                   className={`flex items-center gap-3 px-3 py-3 rounded-lg ${
                     isActive(item.href)
-                      ? "bg-primary-50 text-primary-600 font-medium"
+                      ? "bg-green-50 text-green-600 font-medium"
                       : "text-gray-600 hover:bg-gray-100"
                   }`}
                 >
@@ -148,7 +154,7 @@ const Navbar = () => {
                   onClick={() => setMobileMenuOpen(false)}
                   className={`flex items-center gap-3 px-3 py-3 rounded-lg ${
                     isActive("/profile")
-                      ? "bg-primary-50 text-primary-600 font-medium"
+                      ? "bg-green-50 text-green-600 font-medium"
                       : "text-gray-600 hover:bg-gray-100"
                   }`}
                 >
@@ -171,14 +177,14 @@ const Navbar = () => {
                 <Link
                   to="/login"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="w-full text-center px-4 py-2 border border-primary-600 text-primary-600 rounded-lg hover:bg-primary-50 font-medium"
+                  className="w-full text-center px-4 py-2 border border-green-600 text-green-600 rounded-lg hover:bg-green-50 font-medium"
                 >
                   Login
                 </Link>
                 <Link
                   to="/register"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="w-full text-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium"
+                  className="w-full text-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
                 >
                   Sign Up
                 </Link>

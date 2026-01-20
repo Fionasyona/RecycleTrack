@@ -11,7 +11,6 @@ import AdminGuard from "./components/auth/AdminGuard";
 import ProtectedRoute from "./routes/ProtectedRoute";
 
 // --- Pages: Public & User ---
-// FIX: Import the Detail page, not the Card component
 import ArticleDetail from "./pages/education/ArticleDetail";
 import Dashboard from "./pages/Dashboard";
 import Education from "./pages/Education";
@@ -21,11 +20,12 @@ import MapView from "./pages/MapView";
 import Profile from "./pages/Profile";
 import Register from "./pages/Register";
 
+
 // --- Pages: Admin ---
 import AdminDashboard from "./pages/AdminDashboard";
-import UsersManagement from "./pages/UsersManagement";
-import ManageCenters from "./pages/admin/ManageCenters";
-import AdminArticles from "./pages/admin/AdminArticles";
+import UsersManagement from "./pages/UsersManagement"; // Ensure you create this file if missing
+import ManageCenters from "./pages/admin/ManageCenters"; // Ensure you create this file if missing
+import AdminArticles from "./pages/admin/AdminArticles"; // Ensure you create this file if missing
 
 function App() {
   return (
@@ -42,7 +42,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/education" element={<Education />} />
 
-            {/* FIX: Correct Route for Article Detail */}
+            {/* Dynamic Route for Article Details */}
             <Route path="/education/:id" element={<ArticleDetail />} />
 
             {/* Protected User Routes (Require Login) */}
@@ -72,6 +72,7 @@ function App() {
             />
           </Route>
 
+
           {/* =======================================================
               SECTION 2: ADMIN PORTAL (Uses AdminLayout)
              ======================================================= */}
@@ -86,12 +87,10 @@ function App() {
             {/* The "index" route matches /admin exactly */}
             <Route index element={<AdminDashboard />} />
 
-            {/* Sub-routes */}
+            {/* Admin Sub-routes */}
             <Route path="users" element={<UsersManagement />} />
             <Route path="centers" element={<ManageCenters />} />
             <Route path="education" element={<AdminArticles />} />
-            {/* Note: I changed "education" to "articles" to match typical admin paths, 
-                but "education" works too if that's what your sidebar links to */}
           </Route>
 
           {/* =======================================================

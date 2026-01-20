@@ -1,244 +1,272 @@
-import { useState, useEffect } from "react";
-import { Plus, Activity, Clock, TrendingUp } from "lucide-react";
-import { Button } from "../components/common/Button";
-import PointsDisplay from "../components/gamification/PointsDisplay";
-import BadgeCard from "../components/gamification/BadgeCard";
-import Leaderboard from "../components/gamification/Leaderboard";
-import ReportActivityModal from "../components/gamification/ReportActivityModal";
-import gamificationService from "../services/gamificationService";
-import toast from "react-hot-toast";
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import { centerAPI, api } from "../services/api";
+import {
+  MapPin,
+  Trophy,
+  Navigation,
+  ArrowRight,
+  Crown,
+  Medal,
+  User,
+} from "lucide-react";
+import { Link } from "react-router-dom";
 
 const Dashboard = () => {
-  const [userPoints, setUserPoints] = useState(null);
-  const [badges, setBadges] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [recentActivities, setRecentActivities] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { user: currentUser } = useAuth();
+
+  const [profile, setProfile] = useState(
+    currentUser || { points: 0, badge: "Newcomer", full_name: "Resident" }
+  );
+  const [centerCount, setCenterCount] = useState(0);
+  const [leaders, setLeaders] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Load dashboard data
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
+  // Helper: Calculate Badge Progress
+  const getBadgeProgress = (points) => {
+    if (points >= 2000)
+      return { next: "Max Level", target: 2000, percent: 100 };
+    if (points >= 1000)
+      return {
+        next: "Recycle Legend",
+        target: 2000,
+        percent: (points / 2000) * 100,
+      };
+    if (points >= 500)
+      return {
+        next: "Planet Protector",
+        target: 1000,
+        percent: (points / 1000) * 100,
+      };
+    if (points >= 250)
+      return {
+        next: "Waste Warrior",
+        target: 500,
+        percent: (points / 500) * 100,
+      };
+    if (points >= 100)
+      return {
+        next: "Green Guardian",
+        target: 250,
+        percent: (points / 250) * 100,
+      };
+    return { next: "Eco Starter", target: 100, percent: (points / 100) * 100 };
+  };
 
-  const loadDashboardData = async () => {
-    setLoading(true);
-    try {
-      const [pointsData, badgesData, leaderboardData, activitiesData] =
-        await Promise.all([
-          gamificationService.getUserPoints(),
-          gamificationService.getUserBadges(),
-          gamificationService.getLeaderboard(5),
-          gamificationService.getRecentActivities(5),
+  const progress = getBadgeProgress(profile.points || 0);
+
+  // Helper: Get Rank Icon
+  const getRankIcon = (index) => {
+    if (index === 0)
+      return <Crown className="w-5 h-5 text-yellow-500 fill-yellow-500" />;
+    if (index === 1)
+      return <Medal className="w-5 h-5 text-gray-400 fill-gray-400" />;
+    if (index === 2)
+      return <Medal className="w-5 h-5 text-orange-400 fill-orange-400" />;
+    return (
+      <span className="font-bold text-gray-400 text-sm">#{index + 1}</span>
+    );
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [centersRes, profileRes, leaderboardRes] = await Promise.all([
+          centerAPI.getAll(),
+          api.get("/users/profile/"),
+          api.get("/users/leaderboard/"),
         ]);
 
-      setUserPoints(pointsData);
-      setBadges(badgesData);
-      setLeaderboard(leaderboardData);
-      setRecentActivities(activitiesData);
-    } catch (error) {
-      toast.error("Failed to load dashboard data");
-      console.error("Error loading dashboard:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+        // Handle Centers
+        const centers = Array.isArray(centersRes)
+          ? centersRes
+          : centersRes.results || [];
+        setCenterCount(centers.length);
 
-  const handleActivityReported = (newActivity) => {
-    // Refresh dashboard data after reporting
-    loadDashboardData();
-  };
+        // Handle Profile
+        setProfile(profileRes.data || profileRes);
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = Math.floor((now - date) / (1000 * 60 * 60));
-
-    if (diffInHours < 1) return "Just now";
-    if (diffInHours < 24) return `${diffInHours}h ago`;
-    if (diffInHours < 48) return "Yesterday";
-    return date.toLocaleDateString();
-  };
-
-  const getActivityIcon = (type) => {
-    const icons = {
-      plastic_recycling: "♻️",
-      e_waste: "📱",
-      organic_composting: "🌱",
-      paper_recycling: "📄",
+        // Handle Leaderboard (Robust Check)
+        const leadersData = leaderboardRes.data || leaderboardRes;
+        if (Array.isArray(leadersData)) {
+          setLeaders(leadersData);
+        } else {
+          setLeaders([]);
+        }
+      } catch (error) {
+        console.error("Dashboard Error:", error);
+      } finally {
+        setLoading(false);
+      }
     };
-    return icons[type] || "♻️";
-  };
 
-  if (loading) {
+    fetchData();
+  }, []);
+
+  if (loading)
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading your dashboard...</p>
-        </div>
+      <div className="p-10 text-center text-gray-500">
+        Loading your dashboard...
       </div>
     );
-  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-primary-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Welcome back, Recycler! 🌍
-          </h1>
-          <p className="text-gray-600 text-lg">
-            Track your impact and earn rewards for making the planet greener
-          </p>
-        </div>
-
-        {/* Quick Action Button */}
-        <div className="mb-8">
-          <Button
-            onClick={() => setIsModalOpen(true)}
-            size="lg"
-            className="w-full sm:w-auto shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-200"
-          >
-            <Plus size={20} />
-            Report New Activity
-          </Button>
-        </div>
-
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Points Display - Spans 2 columns on large screens */}
-          <div className="lg:col-span-2">
-            <PointsDisplay
-              points={userPoints?.total_points}
-              rank={userPoints?.rank}
-              level={userPoints?.level}
-              pointsToNextLevel={userPoints?.points_to_next_level}
-            />
+    <div className="max-w-6xl mx-auto p-6 space-y-8">
+      {/* 1. HERO SECTION */}
+      <div className="bg-gradient-to-r from-green-700 to-green-600 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
+        <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <span className="bg-yellow-400 text-green-900 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">
+                {profile.badge || "Newcomer"}
+              </span>
+            </div>
+            <h1 className="text-3xl font-bold">Hello, {profile.full_name}!</h1>
+            <p className="text-green-50 opacity-90 mt-2">
+              You have earned <strong>{profile.points} points</strong>.
+            </p>
           </div>
 
-          {/* Quick Stats Card */}
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-200">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="bg-gradient-to-br from-green-500 to-green-600 p-3 rounded-xl">
-                <TrendingUp className="text-white" size={24} />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">Quick Stats</h3>
-                <p className="text-sm text-gray-600">Your impact this month</p>
-              </div>
+          <div className="w-full md:w-1/3 bg-black/20 p-4 rounded-xl backdrop-blur-sm border border-white/10">
+            <div className="flex justify-between text-sm mb-2 font-medium">
+              <span>Next: {progress.next}</span>
+              <span>
+                {profile.points} / {progress.target} pts
+              </span>
             </div>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <span className="text-sm text-gray-700">CO₂ Saved</span>
-                <span className="text-lg font-bold text-green-600">
-                  {Math.floor((userPoints?.total_points || 0) * 0.5)} kg
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <span className="text-sm text-gray-700">Trees Planted</span>
-                <span className="text-lg font-bold text-blue-600">
-                  {Math.floor((userPoints?.total_points || 0) / 100)} 🌳
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
-                <span className="text-sm text-gray-700">Streak Days</span>
-                <span className="text-lg font-bold text-purple-600">12 🔥</span>
-              </div>
+            <div className="w-full bg-gray-700 h-3 rounded-full overflow-hidden">
+              <div
+                className="bg-yellow-400 h-full rounded-full transition-all duration-1000 ease-out"
+                style={{ width: `${progress.percent}%` }}
+              ></div>
             </div>
-          </div>
-        </div>
-
-        {/* Badges Section */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">Your Badges</h2>
-              <p className="text-gray-600">
-                Unlock achievements as you recycle more
-              </p>
-            </div>
-            <span className="text-sm text-gray-600">
-              {badges.filter((b) => b.unlocked).length}/{badges.length} unlocked
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {badges.map((badge) => (
-              <BadgeCard key={badge.id} badge={badge} />
-            ))}
-          </div>
-        </div>
-
-        {/* Bottom Grid - Leaderboard & Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Leaderboard - 2 columns */}
-          <div className="lg:col-span-2">
-            <Leaderboard users={leaderboard} />
-          </div>
-
-          {/* Recent Activity - 1 column */}
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-200">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-3 rounded-xl">
-                <Activity className="text-white" size={24} />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">
-                  Recent Activity
-                </h3>
-                <p className="text-sm text-gray-600">Your latest actions</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {recentActivities.length > 0 ? (
-                recentActivities.map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="text-2xl">
-                      {getActivityIcon(activity.activity_type)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {activity.description}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Clock size={12} className="text-gray-400" />
-                        <span className="text-xs text-gray-600">
-                          {formatDate(activity.created_at)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex-shrink-0">
-                      <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                        +{activity.points_earned}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Activity size={48} className="mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No activities yet</p>
-                  <p className="text-xs mt-1">
-                    Start recycling to see your progress!
-                  </p>
-                </div>
-              )}
-            </div>
+            <p className="text-xs text-green-200 mt-2 text-center">
+              {progress.target - profile.points > 0
+                ? `${Math.ceil(
+                    (progress.target - profile.points) / 20
+                  )} more recycles to level up!`
+                : "You are at the top level!"}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Report Activity Modal */}
-      <ReportActivityModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onActivityReported={handleActivityReported}
-      />
+      {/* 2. STATS & ACTIONS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Total Points */}
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+          <div className="bg-yellow-100 p-3 rounded-full text-yellow-600">
+            <Trophy className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Total Points</p>
+            <p className="text-2xl font-bold text-gray-900">{profile.points}</p>
+          </div>
+        </div>
+
+        {/* Active Centers */}
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+          <div className="bg-blue-100 p-3 rounded-full text-blue-600">
+            <MapPin className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Active Centers</p>
+            <p className="text-2xl font-bold text-gray-900">{centerCount}</p>
+          </div>
+        </div>
+
+        {/* Find Centers Button */}
+        <Link
+          to="/maps"
+          className="bg-green-600 p-6 rounded-xl shadow-md flex items-center justify-between gap-4 text-white hover:bg-green-700 hover:shadow-lg transition cursor-pointer group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="bg-white/20 p-3 rounded-full text-white">
+              <Navigation className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-green-100">
+                Ready to Recycle?
+              </p>
+              <p className="text-xl font-bold">Find Nearest Center</p>
+            </div>
+          </div>
+          <ArrowRight className="w-5 h-5 opacity-70 group-hover:translate-x-1 transition-transform" />
+        </Link>
+      </div>
+
+      {/* 3. LEADERBOARD SECTION */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-6 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-yellow-500" /> Community Leaderboard
+          </h2>
+          <span className="text-xs font-semibold text-green-600 bg-green-100 px-3 py-1 rounded-full">
+            Top 20 Heroes
+          </span>
+        </div>
+
+        <div className="divide-y divide-gray-100">
+          {Array.isArray(leaders) && leaders.length > 0 ? (
+            leaders.map((player, index) => (
+              <div
+                key={player.id || index}
+                className={`flex items-center justify-between p-4 hover:bg-gray-50 transition ${
+                  currentUser?.email === player.email
+                    ? "bg-yellow-50 border-l-4 border-yellow-400"
+                    : ""
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-8 flex justify-center">
+                    {getRankIcon(index)}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
+                        index === 0
+                          ? "bg-yellow-500"
+                          : index === 1
+                          ? "bg-gray-400"
+                          : index === 2
+                          ? "bg-orange-400"
+                          : "bg-green-600"
+                      }`}
+                    >
+                      {player.full_name ? (
+                        player.full_name[0].toUpperCase()
+                      ) : (
+                        <User className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div>
+                      <p
+                        className={`text-sm font-bold ${
+                          currentUser?.email === player.email
+                            ? "text-green-800"
+                            : "text-gray-800"
+                        }`}
+                      >
+                        {player.full_name || "Anonymous"}{" "}
+                        {currentUser?.email === player.email && " (You)"}
+                      </p>
+                      <p className="text-xs text-gray-400">{player.badge}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="font-bold text-gray-700">
+                  {player.points}{" "}
+                  <span className="text-xs font-normal text-gray-400">pts</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center text-gray-500">
+              No leaderboard data available yet.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
