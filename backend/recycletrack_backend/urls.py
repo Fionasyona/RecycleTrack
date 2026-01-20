@@ -38,9 +38,6 @@ urlpatterns = [
     # Connect the Rewards App
     path('api/rewards/', include('rewards.urls')),
 
-    # Connect the Gamification App
-    path('api/gamification/', include('gamification.urls')),
-
     # Connect the Maps App
     path('api/map/', include('map.urls')),
 

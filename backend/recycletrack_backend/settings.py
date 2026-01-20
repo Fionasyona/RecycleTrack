@@ -45,7 +45,6 @@ INSTALLED_APPS = [
     'badges',
     'notifications',
     'rewards',
-    'gamification',
     'map',
     'education',
     'recycling',
