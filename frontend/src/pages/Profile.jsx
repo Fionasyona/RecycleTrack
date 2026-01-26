@@ -5,11 +5,13 @@ import {
   Phone,
   MapPin,
   Edit2,
-  Camera,
   Save,
   X,
   Loader,
   Trash2,
+  Lock,
+  Shield,
+  Key,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Card } from "../components/common/Card";
@@ -22,7 +24,10 @@ const Profile = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passLoading, setPassLoading] = useState(false);
+  const [showPassForm, setShowPassForm] = useState(false);
 
+  // Profile Data State
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
@@ -30,13 +35,33 @@ const Profile = () => {
     address: "",
   });
 
+  // Password Data State
+  const [passData, setPassData] = useState({
+    old_password: "",
+    new_password: "",
+  });
+
   useEffect(() => {
     if (user) {
+      // --- SMART NAME FILLER ---
+      let fName = user.first_name || "";
+      let lName = user.last_name || "";
+
+      if ((!fName || !lName) && user.full_name) {
+        const parts = user.full_name.trim().split(" ");
+        if (parts.length > 0) {
+          fName = parts[0];
+          lName = parts.slice(1).join(" ");
+        }
+      }
+
+      // --- POPULATE PHONE & ADDRESS ---
+      // We check user.phone and user.address directly now that the backend sends them
       setFormData({
-        first_name: user.first_name || "",
-        last_name: user.last_name || "",
+        first_name: fName,
+        last_name: lName,
         phone: user.phone || "",
-        address: user.address || user.location || "",
+        address: user.address || user.location || "", // Check both just in case
       });
     }
   }, [user]);
@@ -45,10 +70,15 @@ const Profile = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handlePassChange = (e) => {
+    setPassData({ ...passData, [e.target.name]: e.target.value });
+  };
+
+  // Submit Profile Update
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const response = await api.patch("/users/profile/", formData);
+      await api.patch("/users/profile/", formData);
       toast.success("Profile updated successfully!");
       setIsEditing(false);
     } catch (error) {
@@ -59,23 +89,40 @@ const Profile = () => {
     }
   };
 
-  // Helper class for the input boxes to ensure they look exactly like the Email box
+  // Submit Password Change
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (!passData.old_password || !passData.new_password) {
+      return toast.error("Please fill in both fields");
+    }
+
+    setPassLoading(true);
+    try {
+      await api.post("/users/change-password/", passData);
+      toast.success("Password changed! Please log in again.");
+      setPassData({ old_password: "", new_password: "" });
+      setShowPassForm(false);
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Failed to change password");
+    } finally {
+      setPassLoading(false);
+    }
+  };
+
   const inputBoxClass = isEditing
     ? "bg-white border-green-500 ring-1 ring-green-500"
-    : "bg-gray-50 border-gray-100"; // This matches the Email style exactly
+    : "bg-gray-50 border-gray-100";
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
               My Profile
             </h1>
-            <p className="text-gray-600">
-              Manage your account settings and preferences
-            </p>
+            <p className="text-gray-600">Manage your account settings</p>
           </div>
 
           <div className="flex gap-2">
@@ -103,189 +150,214 @@ const Profile = () => {
               </>
             ) : (
               <Button onClick={() => setIsEditing(true)} variant="outline">
-                <Edit2 size={16} className="mr-2" /> Edit Profile
+                <Edit2 size={16} className="mr-2" /> Edit Details
               </Button>
             )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 1. PROFILE PHOTO CARD */}
-          <Card className="lg:col-span-1">
-            <div className="text-center">
-              <div className="relative inline-block mb-4">
-                <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
-                  <User className="w-12 h-12 text-green-600" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* 1. PERSONAL INFO */}
+          <div className="lg:col-span-2 space-y-6">
+            <Card title="Personal Information">
+              <div className="space-y-6">
+                {/* Names */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
+                      First Name
+                    </label>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        name="first_name"
+                        value={formData.first_name}
+                        onChange={handleChange}
+                        className="w-full p-2 border border-green-500 rounded focus:ring-2 focus:ring-green-200 outline-none"
+                      />
+                    ) : (
+                      <p className="text-gray-900 font-medium p-2 bg-gray-50 rounded border border-gray-100">
+                        {formData.first_name || "N/A"}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
+                      Last Name
+                    </label>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        name="last_name"
+                        value={formData.last_name}
+                        onChange={handleChange}
+                        className="w-full p-2 border border-green-500 rounded focus:ring-2 focus:ring-green-200 outline-none"
+                      />
+                    ) : (
+                      <p className="text-gray-900 font-medium p-2 bg-gray-50 rounded border border-gray-100">
+                        {formData.last_name || "N/A"}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <button className="absolute bottom-0 right-0 w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white hover:bg-green-700 transition-colors shadow-sm">
-                  <Camera size={16} />
-                </button>
-              </div>
 
-              {isEditing ? (
-                <div className="space-y-2 mb-4 px-4">
-                  <input
-                    type="text"
-                    name="first_name"
-                    value={formData.first_name}
-                    onChange={handleChange}
-                    placeholder="First Name"
-                    className="w-full p-2 border border-gray-300 rounded text-center text-sm focus:ring-2 focus:ring-green-500 outline-none"
-                  />
-                  <input
-                    type="text"
-                    name="last_name"
-                    value={formData.last_name}
-                    onChange={handleChange}
-                    placeholder="Last Name"
-                    className="w-full p-2 border border-gray-300 rounded text-center text-sm focus:ring-2 focus:ring-green-500 outline-none"
-                  />
-                </div>
-              ) : (
-                <h2 className="text-xl font-bold text-gray-900 mb-1">
-                  {formData.first_name} {formData.last_name}
-                </h2>
-              )}
-
-              <p className="text-sm text-gray-600 mb-4">{user?.email}</p>
-            </div>
-          </Card>
-
-          {/* 2. DETAILS CARD */}
-          <Card title="Account Information" className="lg:col-span-2">
-            <div className="space-y-4">
-              {/* Email (Standard Reference) */}
-              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
-                <Mail className="text-gray-400" size={20} />
-                <div className="flex-1">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">
-                    Email
-                  </p>
-                  <p className="text-sm font-medium text-gray-900">
-                    {user?.email}
-                  </p>
-                </div>
-              </div>
-
-              {/* Phone (Now matches Email style) */}
-              <div
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${inputBoxClass}`}
-              >
-                <Phone
-                  className={`${
-                    isEditing ? "text-green-600" : "text-gray-400"
-                  }`}
-                  size={20}
-                />
-                <div className="flex-1">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">
-                    Phone
-                  </p>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      className="w-full bg-transparent outline-none text-sm font-medium text-gray-900 placeholder-gray-400"
-                      placeholder="+254 7..."
-                    />
-                  ) : (
-                    <p className="text-sm font-medium text-gray-900">
-                      {formData.phone || "Not provided"}
+                {/* Email */}
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <Mail className="text-gray-400" size={20} />
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">
+                      Email Address
                     </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Location (Now matches Email style) */}
-              <div
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${inputBoxClass}`}
-              >
-                <MapPin
-                  className={`${
-                    isEditing ? "text-green-600" : "text-gray-400"
-                  }`}
-                  size={20}
-                />
-                <div className="flex-1">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">
-                    Location
-                  </p>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      name="address"
-                      value={formData.address}
-                      onChange={handleChange}
-                      className="w-full bg-transparent outline-none text-sm font-medium text-gray-900 placeholder-gray-400"
-                      placeholder="e.g. Nairobi, Kenya"
-                    />
-                  ) : (
                     <p className="text-sm font-medium text-gray-900">
-                      {formData.address || "Not provided"}
+                      {user?.email}
                     </p>
-                  )}
+                  </div>
+                  <Lock size={14} className="text-gray-400" />
+                </div>
+
+                {/* Phone */}
+                <div
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${inputBoxClass}`}
+                >
+                  <Phone
+                    className={`${isEditing ? "text-green-600" : "text-gray-400"}`}
+                    size={20}
+                  />
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">
+                      Phone
+                    </p>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        name="phone"
+                        value={formData.phone}
+                        onChange={handleChange}
+                        className="w-full bg-transparent outline-none text-sm font-medium text-gray-900"
+                        placeholder="+254 7..."
+                      />
+                    ) : (
+                      <p className="text-sm font-medium text-gray-900">
+                        {formData.phone || "Not provided"}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Location */}
+                <div
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${inputBoxClass}`}
+                >
+                  <MapPin
+                    className={`${isEditing ? "text-green-600" : "text-gray-400"}`}
+                    size={20}
+                  />
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">
+                      Location
+                    </p>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        name="address"
+                        value={formData.address}
+                        onChange={handleChange}
+                        className="w-full bg-transparent outline-none text-sm font-medium text-gray-900"
+                        placeholder="Nairobi, Kenya"
+                      />
+                    ) : (
+                      <p className="text-sm font-medium text-gray-900">
+                        {formData.address || "Not provided"}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
+            </Card>
+          </div>
 
-              {/* Member Since */}
-              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
-                <User className="text-gray-400" size={20} />
-                <div className="flex-1">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">
-                    Member Since
-                  </p>
-                  <p className="text-sm font-medium text-gray-900">
-                    {user?.date_joined
-                      ? new Date(user.date_joined).toLocaleDateString()
-                      : "Recently"}
-                  </p>
-                </div>
+          {/* 2. ACTIONS */}
+          <div className="space-y-6">
+            <Card title="Security & Actions">
+              <div className="space-y-4">
+                {!showPassForm ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowPassForm(true)}
+                    className="w-full justify-start hover:bg-gray-50 border-gray-200"
+                  >
+                    <Key size={16} className="mr-2 text-gray-500" /> Change
+                    Password
+                  </Button>
+                ) : (
+                  <form
+                    onSubmit={handleChangePassword}
+                    className="bg-gray-50 p-4 rounded-lg border border-gray-200 animate-fade-in"
+                  >
+                    <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                      <Lock size={14} /> Update Password
+                    </h3>
+                    <div className="space-y-3">
+                      <input
+                        type="password"
+                        name="old_password"
+                        placeholder="Current Password"
+                        value={passData.old_password}
+                        onChange={handlePassChange}
+                        className="w-full p-2 text-sm border border-gray-300 rounded focus:border-green-500 outline-none"
+                      />
+                      <input
+                        type="password"
+                        name="new_password"
+                        placeholder="New Password"
+                        value={passData.new_password}
+                        onChange={handlePassChange}
+                        className="w-full p-2 text-sm border border-gray-300 rounded focus:border-green-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowPassForm(false)}
+                        className="flex-1 py-2 text-xs font-bold text-gray-500 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={passLoading}
+                        className="flex-1 py-2 text-xs font-bold text-white bg-green-600 rounded hover:bg-green-700 flex justify-center items-center"
+                      >
+                        {passLoading ? (
+                          <Loader size={12} className="animate-spin" />
+                        ) : (
+                          "Update"
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+                <div className="border-t border-gray-100 my-2"></div>
+                <Button className="w-full justify-start bg-red-600 hover:bg-red-700 text-white shadow-none border-none">
+                  <Trash2 size={16} className="mr-2" /> Delete Account
+                </Button>
+              </div>
+            </Card>
+
+            <div className="bg-green-50 p-4 rounded-xl border border-green-100 flex items-center gap-3">
+              <div className="bg-green-100 p-2 rounded-full text-green-700">
+                <Shield size={20} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-green-900">
+                  Account Active
+                </p>
+                <p className="text-xs text-green-700">
+                  Your account is fully verified.
+                </p>
               </div>
             </div>
-          </Card>
-        </div>
-
-        {/* 3. SETTINGS */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-          <Card title="Statistics">
-            <div className="space-y-3">
-              <div className="flex justify-between items-center p-2 hover:bg-gray-50 rounded transition-colors">
-                <span className="text-sm text-gray-600">Total Points</span>
-                <span className="font-bold text-green-600">
-                  {user?.points || 0}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-2 hover:bg-gray-50 rounded transition-colors">
-                <span className="text-sm text-gray-600">Badges Earned</span>
-                <span className="font-bold text-gray-900">0</span>
-              </div>
-            </div>
-          </Card>
-
-          <Card title="Account Actions">
-            <div className="space-y-3">
-              <Button
-                variant="outline"
-                className="w-full justify-start hover:bg-gray-50"
-              >
-                Change Password
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start hover:bg-gray-50"
-              >
-                Notification Settings
-              </Button>
-
-              {/* FIXED DELETE BUTTON: Solid Red, No Shadow/Cast */}
-              <Button className="w-full justify-start bg-red-600 hover:bg-red-700 text-white shadow-none border-none">
-                <Trash2 size={16} className="mr-2" />
-                Delete Account
-              </Button>
-            </div>
-          </Card>
+          </div>
         </div>
       </div>
     </div>

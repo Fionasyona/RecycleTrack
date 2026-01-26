@@ -4,11 +4,14 @@ import { centerAPI, api } from "../services/api";
 import {
   MapPin,
   Trophy,
-  Navigation,
   ArrowRight,
   Crown,
   Medal,
   User,
+  Truck,
+  Clock,
+  CheckCircle,
+  History,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -16,10 +19,14 @@ const Dashboard = () => {
   const { user: currentUser } = useAuth();
 
   const [profile, setProfile] = useState(
-    currentUser || { points: 0, badge: "Newcomer", full_name: "Resident" }
+    currentUser || { points: 0, badge: "Newcomer", full_name: "Resident" },
   );
   const [centerCount, setCenterCount] = useState(0);
   const [leaders, setLeaders] = useState([]);
+
+  // STATE FOR HISTORY
+  const [activity, setActivity] = useState({ pending: [], history: [] });
+
   const [loading, setLoading] = useState(true);
 
   // Helper: Calculate Badge Progress
@@ -71,27 +78,34 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [centersRes, profileRes, leaderboardRes] = await Promise.all([
-          centerAPI.getAll(),
-          api.get("/users/profile/"),
-          api.get("/users/leaderboard/"),
-        ]);
+        // Fetch everything in parallel
+        const [centersRes, profileRes, leaderboardRes, historyRes] =
+          await Promise.all([
+            centerAPI.getAll(),
+            api.get("/users/profile/"),
+            api.get("/users/leaderboard/"),
+            api.get("/users/history/"),
+          ]);
 
-        // Handle Centers
+        // --- 1. Handle Centers ---
         const centers = Array.isArray(centersRes)
           ? centersRes
           : centersRes.results || [];
         setCenterCount(centers.length);
 
-        // Handle Profile
+        // --- 2. Handle Profile ---
         setProfile(profileRes.data || profileRes);
 
-        // Handle Leaderboard (Robust Check)
+        // --- 3. Handle Leaderboard ---
         const leadersData = leaderboardRes.data || leaderboardRes;
-        if (Array.isArray(leadersData)) {
-          setLeaders(leadersData);
+        setLeaders(Array.isArray(leadersData) ? leadersData : []);
+
+        // --- 4. Handle History ---
+        const historyData = historyRes.pending ? historyRes : historyRes.data;
+        if (historyData && historyData.pending) {
+          setActivity(historyData);
         } else {
-          setLeaders([]);
+          setActivity({ pending: [], history: [] });
         }
       } catch (error) {
         console.error("Dashboard Error:", error);
@@ -142,9 +156,7 @@ const Dashboard = () => {
             </div>
             <p className="text-xs text-green-200 mt-2 text-center">
               {progress.target - profile.points > 0
-                ? `${Math.ceil(
-                    (progress.target - profile.points) / 20
-                  )} more recycles to level up!`
+                ? `${Math.ceil((progress.target - profile.points) / 20)} more recycles to level up!`
                 : "You are at the top level!"}
             </p>
           </div>
@@ -153,7 +165,6 @@ const Dashboard = () => {
 
       {/* 2. STATS & ACTIONS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Total Points */}
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
           <div className="bg-yellow-100 p-3 rounded-full text-yellow-600">
             <Trophy className="w-6 h-6" />
@@ -164,38 +175,131 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Active Centers */}
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
-          <div className="bg-blue-100 p-3 rounded-full text-blue-600">
+        <Link
+          to="/maps"
+          className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 hover:shadow-md hover:bg-gray-50 transition-all cursor-pointer group"
+        >
+          <div className="bg-blue-100 p-3 rounded-full text-blue-600 group-hover:bg-blue-200 transition-colors">
             <MapPin className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-sm text-gray-500 font-medium">Active Centers</p>
+            <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">
+              Active Centers
+            </p>
             <p className="text-2xl font-bold text-gray-900">{centerCount}</p>
           </div>
-        </div>
+        </Link>
 
-        {/* Find Centers Button */}
         <Link
-          to="/maps"
+          to="/book-pickup"
           className="bg-green-600 p-6 rounded-xl shadow-md flex items-center justify-between gap-4 text-white hover:bg-green-700 hover:shadow-lg transition cursor-pointer group"
         >
           <div className="flex items-center gap-4">
             <div className="bg-white/20 p-3 rounded-full text-white">
-              <Navigation className="w-6 h-6" />
+              <Truck className="w-6 h-6" />
             </div>
             <div>
               <p className="text-sm font-medium text-green-100">
                 Ready to Recycle?
               </p>
-              <p className="text-xl font-bold">Find Nearest Center</p>
+              <p className="text-xl font-bold">Book Pickup</p>
             </div>
           </div>
           <ArrowRight className="w-5 h-5 opacity-70 group-hover:translate-x-1 transition-transform" />
         </Link>
       </div>
 
-      {/* 3. LEADERBOARD SECTION */}
+      {/* 3. MY ACTIVITY SECTION */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Pending Requests */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
+            <Clock className="w-5 h-5 text-orange-500" /> Pickup Requests
+          </h2>
+
+          {activity.pending && activity.pending.length > 0 ? (
+            <div className="space-y-3">
+              {activity.pending.map((req) => (
+                <div
+                  key={req.id}
+                  className={`p-3 border rounded-lg flex justify-between items-center ${
+                    req.status === "cancelled"
+                      ? "bg-red-50 border-red-100"
+                      : "bg-orange-50 border-orange-100"
+                  }`}
+                >
+                  <div>
+                    <p className="font-bold text-sm text-gray-800">
+                      {req.waste_type} ({req.quantity})
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(req.scheduled_date).toDateString()}
+                    </p>
+
+                    {/* Show Rejection Reason */}
+                    {req.status === "cancelled" && (
+                      <p className="text-xs text-red-600 font-bold mt-1">
+                        ⚠️ {req.rejection_reason || "Request declined"}
+                      </p>
+                    )}
+                  </div>
+
+                  <span
+                    className={`text-xs font-bold px-2 py-1 rounded border ${
+                      req.status === "cancelled"
+                        ? "bg-white text-red-600 border-red-200"
+                        : "bg-white text-orange-600 border-orange-200"
+                    }`}
+                  >
+                    {req.status === "cancelled" ? "Rejected" : "Processing"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 italic">No recent requests.</p>
+          )}
+        </div>
+
+        {/* Recent History */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
+            <History className="w-5 h-5 text-blue-500" /> Recent History
+          </h2>
+
+          {activity.history && activity.history.length > 0 ? (
+            <div className="space-y-3">
+              {activity.history.slice(0, 3).map((log) => (
+                <div
+                  key={log.id}
+                  className="p-3 bg-gray-50 border border-gray-100 rounded-lg flex justify-between items-center"
+                >
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                    <div>
+                      <p className="font-bold text-sm text-gray-800">
+                        {log.waste_type}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(log.date).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-green-600">
+                    +{log.points} pts
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 italic">
+              No recycling history yet.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* 4. LEADERBOARD SECTION */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -227,10 +331,10 @@ const Dashboard = () => {
                         index === 0
                           ? "bg-yellow-500"
                           : index === 1
-                          ? "bg-gray-400"
-                          : index === 2
-                          ? "bg-orange-400"
-                          : "bg-green-600"
+                            ? "bg-gray-400"
+                            : index === 2
+                              ? "bg-orange-400"
+                              : "bg-green-600"
                       }`}
                     >
                       {player.full_name ? (
@@ -241,11 +345,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p
-                        className={`text-sm font-bold ${
-                          currentUser?.email === player.email
-                            ? "text-green-800"
-                            : "text-gray-800"
-                        }`}
+                        className={`text-sm font-bold ${currentUser?.email === player.email ? "text-green-800" : "text-gray-800"}`}
                       >
                         {player.full_name || "Anonymous"}{" "}
                         {currentUser?.email === player.email && " (You)"}

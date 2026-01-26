@@ -19,13 +19,17 @@ import Login from "./pages/Login";
 import MapView from "./pages/MapView";
 import Profile from "./pages/Profile";
 import Register from "./pages/Register";
-
+import BookPickup from "./pages/BookPickup";
 
 // --- Pages: Admin ---
 import AdminDashboard from "./pages/AdminDashboard";
-import UsersManagement from "./pages/UsersManagement"; // Ensure you create this file if missing
-import ManageCenters from "./pages/admin/ManageCenters"; // Ensure you create this file if missing
-import AdminArticles from "./pages/admin/AdminArticles"; // Ensure you create this file if missing
+import UsersManagement from "./pages/UsersManagement";
+import ManageCenters from "./pages/admin/ManageCenters";
+import AdminArticles from "./pages/admin/AdminArticles";
+
+//--- import Collector Dashboard ---
+import CollectorDashboard from "./pages/CollectorDashboard";
+import CollectorsManagement from "./pages/CollectorsManagement";
 
 function App() {
   return (
@@ -70,11 +74,32 @@ function App() {
                 </ProtectedRoute>
               }
             />
+
+            {/* Route for Booking Pickup */}
+            <Route
+              path="/book-pickup"
+              element={
+                <ProtectedRoute>
+                  <BookPickup />
+                </ProtectedRoute>
+              }
+            />
           </Route>
 
+          {/* =======================================================
+              SECTION 2: COLLECTOR PORTAL (Standalone)
+             ======================================================= */}
+          <Route
+            path="/collector-dashboard"
+            element={
+              <ProtectedRoute>
+                <CollectorDashboard />
+              </ProtectedRoute>
+            }
+          />
 
           {/* =======================================================
-              SECTION 2: ADMIN PORTAL (Uses AdminLayout)
+              SECTION 3: ADMIN PORTAL (Uses AdminLayout)
              ======================================================= */}
           <Route
             path="/admin"
@@ -86,15 +111,16 @@ function App() {
           >
             {/* The "index" route matches /admin exactly */}
             <Route index element={<AdminDashboard />} />
-
-            {/* Admin Sub-routes */}
+            {/* Admin Sub-routes (Nested inside Layout) */}
             <Route path="users" element={<UsersManagement />} />
+            <Route path="collectors" element={<CollectorsManagement />} />{" "}
+            {/* <--- MOVED HERE */}
             <Route path="centers" element={<ManageCenters />} />
             <Route path="education" element={<AdminArticles />} />
           </Route>
 
           {/* =======================================================
-              SECTION 3: CATCH-ALL (404 Redirect)
+              SECTION 4: CATCH-ALL (404 Redirect)
              ======================================================= */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

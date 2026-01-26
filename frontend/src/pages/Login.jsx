@@ -29,12 +29,19 @@ const Login = () => {
       // 1. Login and GET the user data immediately
       const user = await login(formData.email, formData.password);
 
-      toast.success("Welcome back!");
+      toast.success(`Welcome back, ${user.first_name || "User"}!`);
 
       // 2. Direct Logic based on the data we just received
       if (user.role === "admin" || user.is_superuser) {
         navigate("/admin", { replace: true });
-      } else {
+      }
+      // --- FIX: Redirect Drivers to their specific dashboard ---
+      else if (user.role === "service_provider") {
+        navigate("/collector-dashboard", { replace: true });
+      }
+      // --------------------------------------------------------
+      else {
+        // Residents go to the standard dashboard (or where they tried to go)
         navigate(from, { replace: true });
       }
     } catch (error) {
