@@ -3,30 +3,21 @@ from django.contrib.auth.models import AbstractUser
 from django.conf import settings 
 
 class RecycleUser(AbstractUser):
-    # Custom fields
     full_name = models.CharField(max_length=100)
-    # Added separate name fields for better compatibility
     first_name = models.CharField(max_length=100, blank=True)
     last_name = models.CharField(max_length=100, blank=True)
-    
     phone = models.CharField(max_length=20, null=True, blank=True)
     address = models.CharField(max_length=255, null=True, blank=True)
     
-    # --- GAMIFICATION FIELDS ---
     points = models.IntegerField(default=0)
-    
-    # CHANGED: Badge is now a real database field, not just a property
     badge = models.CharField(max_length=50, default='Newcomer')
     
-    # Role Field
     ROLE_CHOICES = [
         ('resident', 'Resident'),
         ('service_provider', 'Service Provider'),
         ('admin', 'Admin')
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='resident')
-
-    # Fix conflicts with default Django User model
     email = models.EmailField(unique=True) 
 
     class Meta:
@@ -35,41 +26,41 @@ class RecycleUser(AbstractUser):
     def __str__(self):
         return self.email
 
-    # --- NEW: AUTOMATED BADGE LOGIC ---
     def update_badge(self):
-        """
-        Updates the badge based on current points.
-        Call this whenever points are modified.
-        """
-        if self.points >= 2000:
-            self.badge = "Recycle Legend"
-        elif self.points >= 1000:
-            self.badge = "Planet Protector"
-        elif self.points >= 500:
-            self.badge = "Waste Warrior"
-        elif self.points >= 250:
-            self.badge = "Green Guardian"
-        elif self.points >= 100:
-            self.badge = "Eco Starter"
-        else:
-            self.badge = "Newcomer"
-        
-        self.save() # Saves the new badge to the database
+        if self.points >= 2000: self.badge = "Recycle Legend"
+        elif self.points >= 1000: self.badge = "Planet Protector"
+        elif self.points >= 500: self.badge = "Waste Warrior"
+        elif self.points >= 250: self.badge = "Green Guardian"
+        elif self.points >= 100: self.badge = "Eco Starter"
+        else: self.badge = "Newcomer"
+        self.save()
 
-# --- LOGGING MODEL ---
+# --- LOGGING MODEL (UPDATED) ---
 class RecyclingLog(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='recycling_logs')
     date = models.DateTimeField(auto_now_add=True)
     points_awarded = models.IntegerField(default=20)
+    
+    # --- NEW FIELDS FOR REPORTING ---
+    WASTE_TYPES = [
+        ('Plastic', 'Plastic'),
+        ('Glass', 'Glass'),
+        ('Paper', 'Paper'),
+        ('Metal', 'Metal'),
+        ('Electronics', 'Electronics'),
+    ]
+    waste_type = models.CharField(max_length=50, choices=WASTE_TYPES, default='Plastic')
+    quantity = models.CharField(max_length=50, default="1 bag") 
+    
     description = models.CharField(max_length=255, default="Standard Recycle Drop-off")
 
     class Meta:
         db_table = 'recycling_logs'
 
     def __str__(self):
-        return f"{self.user.email} - {self.points_awarded} pts - {self.date.strftime('%Y-%m-%d')}"
+        return f"{self.user.email} - {self.waste_type} - {self.points_awarded} pts"
 
-# --- LEGACY MODELS (Kept for compatibility) ---
+# --- LEGACY MODELS ---
 class ServiceProvider(models.Model):
     provider_id = models.AutoField(primary_key=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_column='user_id')
@@ -100,3 +91,39 @@ class AdminLog(models.Model):
 
     class Meta:
         db_table = 'admin_logs'
+
+class PickupRequest(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending Pickup'),
+        ('assigned', 'Assigned to Collector'), # <--- NEW
+        ('collected', 'Waste Collected'),
+        ('verified', 'Verified & Points Awarded'),
+        ('cancelled', 'Cancelled / Rejected'), # <--- UPDATED
+    ]
+
+    # Link to the User who is booking
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    
+    # We store the Center's Name (Simple approach) or link to a Center model
+    center_name = models.CharField(max_length=100) 
+    waste_type = models.CharField(max_length=50, choices=RecyclingLog.WASTE_TYPES)
+    quantity = models.CharField(max_length=50, default="1 bag")
+    scheduled_date = models.DateField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    rejection_reason = models.TextField(null=True, blank=True) 
+
+    collector = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='assigned_pickups',
+        limit_choices_to={'role': 'service_provider'}
+    )
+
+    class Meta:
+        db_table = 'pickup_requests'
+
+    def __str__(self):
+        return f"Request: {self.user.email} - {self.center_name} ({self.status})"
