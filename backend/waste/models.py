@@ -1,8 +1,5 @@
-# waste/models.py
 from django.db import models
-from django.conf import settings # <--- FIXED
-# You can keep ServiceProvider import if it's in a separate app, or use string reference 'users.ServiceProvider'
-from users.models import ServiceProvider 
+from django.conf import settings
 
 class WasteCategory(models.Model):
     category_id = models.AutoField(primary_key=True)
@@ -20,12 +17,24 @@ class WasteCategory(models.Model):
 class DisposalReport(models.Model):
     report_id = models.AutoField(primary_key=True)
     
-    # <--- FIXED
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_column='user_id')
+    # 1. The Resident/User who created the report
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        db_column='user_id',
+        related_name='waste_reports' # Added to avoid conflict
+    )
     
-    # If ServiceProvider is in 'users' app, this import is usually fine, 
-    # but string reference is safer: 'users.ServiceProvider'
-    provider = models.ForeignKey(ServiceProvider, on_delete=models.SET_NULL, null=True, blank=True, db_column='provider_id')
+    # 2. The Service Provider (Driver) assigned to it
+    # Updated to use AUTH_USER_MODEL since ServiceProvider model is gone
+    provider = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        db_column='provider_id',
+        related_name='assigned_waste_reports' # Added to avoid conflict
+    )
     
     category = models.ForeignKey(WasteCategory, on_delete=models.CASCADE, db_column='category_id')
     image_url = models.CharField(max_length=255, null=True, blank=True)

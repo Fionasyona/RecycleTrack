@@ -19,17 +19,23 @@ from .views import (
     confirm_collection_job,
     create_collector,
     delete_collector,
-    get_admin_history,      # Admin History
-    get_collector_history   # <--- New Driver History Import
+    get_admin_history,
+    get_collector_history,
+    delete_my_account,
+    initiate_payment, # <--- Added
 )
 
 urlpatterns = [
+    # --- AUTH & PROFILE ---
     path('register/', register_user, name='register'),
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('profile/', get_user_profile, name='user-profile'),
-
     path('change-password/', change_password, name='change-password'),
-    
+    path('profile/delete/', delete_my_account, name='delete_my_account'),
+
+    # --- USER: PAYMENT ---
+    path('payment/initiate/', initiate_payment, name='initiate_payment'),
+
     # --- ADMIN MANUAL ENTRY ---
     path('award-points/', award_points, name='award-points'),
 
@@ -58,9 +64,7 @@ urlpatterns = [
     path('admin/collectors/create/', create_collector, name='create_collector'),
     path('admin/collectors/<int:collector_id>/delete/', delete_collector, name='delete_collector'),
 
-    # --- ADMIN HISTORY ---
+    # --- ADMIN & COLLECTOR HISTORY ---
     path('admin/history/', get_admin_history, name='admin_history'),
-
-    # --- DRIVER HISTORY (NEW) ---
     path('collector/history/', get_collector_history, name='collector_history')
 ]
