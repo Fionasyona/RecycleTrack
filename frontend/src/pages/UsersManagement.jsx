@@ -8,6 +8,7 @@ import {
   CheckCircle,
   XCircle,
   Loader,
+  Power, // Added Power icon for deactivation
 } from "lucide-react";
 
 const UsersManagement = () => {
@@ -19,10 +20,8 @@ const UsersManagement = () => {
   const fetchUsers = async () => {
     try {
       const res = await api.get("/users/users/");
+      console.log("Users API Response:", res);
 
-      console.log("Users API Response:", res); // Debugging
-
-      // ROBUST CHECK: Handle both wrapped (res.data) and unwrapped (res) responses
       const data = Array.isArray(res) ? res : res.data;
 
       if (Array.isArray(data)) {
@@ -43,15 +42,21 @@ const UsersManagement = () => {
     fetchUsers();
   }, []);
 
-  // 2. Handle Ban/Activate Toggle
+  // 2. Handle Deactivate/Activate Toggle
   const handleToggleStatus = async (userId, currentStatus) => {
-    const action = currentStatus ? "Ban" : "Activate";
-    if (!window.confirm(`Are you sure you want to ${action} this user?`))
+    // Determine action name based on current status
+    const action = currentStatus ? "Deactivate" : "Activate";
+
+    if (
+      !window.confirm(
+        `Are you sure you want to ${action.toLowerCase()} this user? They will ${currentStatus ? "lose" : "regain"} access to the system.`,
+      )
+    )
       return;
 
     try {
       await api.patch(`/users/users/${userId}/status/`);
-      toast.success(`User ${action}ed successfully!`);
+      toast.success(`User ${action}d successfully!`);
 
       // Update UI locally without refreshing
       setUsers(
@@ -159,12 +164,12 @@ const UsersManagement = () => {
                       <td className="p-4">
                         {/* Status Badge */}
                         {user.is_active ? (
-                          <span className="flex items-center gap-1 text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded w-fit">
+                          <span className="flex items-center gap-1 text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded w-fit border border-green-100">
                             <CheckCircle className="w-3 h-3" /> Active
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1 text-red-600 text-xs font-bold bg-red-50 px-2 py-1 rounded w-fit">
-                            <XCircle className="w-3 h-3" /> Banned
+                          <span className="flex items-center gap-1 text-gray-500 text-xs font-bold bg-gray-100 px-2 py-1 rounded w-fit border border-gray-200">
+                            <Power className="w-3 h-3" /> Deactivated
                           </span>
                         )}
                       </td>
@@ -173,13 +178,21 @@ const UsersManagement = () => {
                           onClick={() =>
                             handleToggleStatus(user.id, user.is_active)
                           }
-                          className={`text-xs font-bold px-3 py-1.5 rounded transition-colors ${
+                          className={`text-xs font-bold px-4 py-2 rounded-lg transition-all flex items-center gap-2 ml-auto w-fit ${
                             user.is_active
-                              ? "text-red-600 hover:bg-red-50"
-                              : "text-green-600 hover:bg-green-50"
+                              ? "text-red-600 bg-red-50 hover:bg-red-100 border border-red-100"
+                              : "text-green-600 bg-green-50 hover:bg-green-100 border border-green-100"
                           }`}
                         >
-                          {user.is_active ? "Ban User" : "Activate"}
+                          {user.is_active ? (
+                            <>
+                              <Power className="w-3 h-3" /> Deactivate
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-3 h-3" /> Activate
+                            </>
+                          )}
                         </button>
                       </td>
                     </tr>

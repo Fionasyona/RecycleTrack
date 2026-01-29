@@ -13,6 +13,7 @@ import {
   Shield,
   Key,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom"; // <--- ADDED IMPORT
 import { useAuth } from "../context/AuthContext";
 import { Card } from "../components/common/Card";
 import { Button } from "../components/common/Button";
@@ -20,7 +21,8 @@ import { api } from "../services/api";
 import toast from "react-hot-toast";
 
 const Profile = () => {
-  const { user } = useAuth();
+  const { user, logout, setUser } = useAuth(); // <--- ADDED logout, setUser
+  const navigate = useNavigate(); // <--- ADDED HOOK
 
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,12 +58,11 @@ const Profile = () => {
       }
 
       // --- POPULATE PHONE & ADDRESS ---
-      // We check user.phone and user.address directly now that the backend sends them
       setFormData({
         first_name: fName,
         last_name: lName,
         phone: user.phone || "",
-        address: user.address || user.location || "", // Check both just in case
+        address: user.address || user.location || "",
       });
     }
   }, [user]);
@@ -78,7 +79,8 @@ const Profile = () => {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      await api.patch("/users/profile/", formData);
+      const res = await api.patch("/users/profile/", formData);
+      setUser(res.data); // Update Context with new data
       toast.success("Profile updated successfully!");
       setIsEditing(false);
     } catch (error) {
@@ -108,6 +110,30 @@ const Profile = () => {
       setPassLoading(false);
     }
   };
+
+  // --- NEW: DELETE ACCOUNT FUNCTION ---
+  const handleDeleteAccount = async () => {
+    if (
+      !window.confirm(
+        "Are you sure? This will PERMANENTLY delete your account and all data. This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+
+    const toastId = toast.loading("Deleting account...");
+
+    try {
+      await api.delete("/users/profile/delete/");
+      toast.success("Account deleted successfully.", { id: toastId });
+      logout(); // Clear session
+      navigate("/login"); // Redirect
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to delete account.", { id: toastId });
+    }
+  };
+  // ------------------------------------
 
   const inputBoxClass = isEditing
     ? "bg-white border-green-500 ring-1 ring-green-500"
@@ -338,9 +364,15 @@ const Profile = () => {
                   </form>
                 )}
                 <div className="border-t border-gray-100 my-2"></div>
-                <Button className="w-full justify-start bg-red-600 hover:bg-red-700 text-white shadow-none border-none">
+
+                {/* --- CONNECTED DELETE BUTTON --- */}
+                <Button
+                  onClick={handleDeleteAccount} // <--- ACTION ADDED HERE
+                  className="w-full justify-start bg-red-600 hover:bg-red-700 text-white shadow-none border-none"
+                >
                   <Trash2 size={16} className="mr-2" /> Delete Account
                 </Button>
+                {/* --------------------------------- */}
               </div>
             </Card>
 

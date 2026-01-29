@@ -13,39 +13,40 @@ import {
   RefreshCw,
   Clock,
   Archive,
+  Navigation,
+  Calendar,
+  CalendarClock,
 } from "lucide-react";
 
 const CollectorDashboard = () => {
   const { user, logout } = useAuth();
 
-  // --- STATE ---
   const [activeTab, setActiveTab] = useState("active");
   const [jobs, setJobs] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. FETCH ALL DATA
+  const NAIROBI_CENTER = [-1.2921, 36.8219];
+
+  // Helper: Get Coordinates (Used for Navigation Button)
+  const getJobCoordinates = (job) => {
+    const lat = parseFloat(job.latitude);
+    const lng = parseFloat(job.longitude);
+    if (!isNaN(lat) && !isNaN(lng)) return [lat, lng];
+    return NAIROBI_CENTER;
+  };
+
   const fetchData = async () => {
     setLoading(true);
-
-    // Fetch 1: Active Jobs
     try {
-      const res = await api.get("/users/collector/jobs/");
-      const data = Array.isArray(res) ? res : res.data || [];
-      setJobs(data);
-    } catch (error) {
-      console.error("Failed to load active jobs:", error);
-    }
+      const jobRes = await api.get("/users/collector/jobs/");
+      setJobs(Array.isArray(jobRes) ? jobRes : jobRes.data || []);
 
-    // Fetch 2: History
-    try {
-      const res = await api.get("/users/collector/history/");
-      const data = Array.isArray(res) ? res : res.data || [];
-      setHistory(data);
+      const histRes = await api.get("/users/collector/history/");
+      setHistory(Array.isArray(histRes) ? histRes : histRes.data || []);
     } catch (error) {
-      console.error("Failed to load history:", error);
+      console.error("Failed to load data:", error);
     }
-
     setLoading(false);
   };
 
@@ -53,7 +54,6 @@ const CollectorDashboard = () => {
     fetchData();
   }, []);
 
-  // 2. ACTIONS
   const handleConfirm = async (id) => {
     if (!window.confirm("Confirm you have collected these items?")) return;
     try {
@@ -65,10 +65,40 @@ const CollectorDashboard = () => {
     }
   };
 
+  const openGoogleMaps = (lat, lng) => {
+    window.open(
+      `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
+      "_blank",
+    );
+  };
+
+  // Grouping Logic
+  const groupJobsByAssignmentDate = (items) => {
+    const groups = {};
+    const sorted = [...items].sort(
+      (a, b) =>
+        new Date(b.assigned_at || b.created_at) -
+        new Date(a.assigned_at || a.created_at),
+    );
+
+    sorted.forEach((item) => {
+      const dateRaw = item.assigned_at || item.created_at;
+      const dateStr = new Date(dateRaw).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+
+      if (!groups[dateStr]) groups[dateStr] = [];
+      groups[dateStr].push(item);
+    });
+    return groups;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      {/* HEADER & STATS (Green Theme) */}
-      <div className="max-w-3xl mx-auto space-y-6 mb-6">
+      {/* HEADER */}
+      <div className="max-w-4xl mx-auto space-y-6 mb-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2 text-gray-800">
@@ -96,7 +126,7 @@ const CollectorDashboard = () => {
           </div>
         </div>
 
-        {/* STATS PILLS (Green Theme) */}
+        {/* STATS */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-green-700 text-white p-4 rounded-xl shadow-lg shadow-green-200 text-center">
             <p className="text-xs uppercase font-bold opacity-80">
@@ -106,105 +136,159 @@ const CollectorDashboard = () => {
           </div>
           <div className="bg-white text-gray-700 p-4 rounded-xl shadow-sm border border-gray-100 text-center">
             <p className="text-xs uppercase font-bold text-gray-400">
-              Total Completed
+              Completed
             </p>
             <p className="text-3xl font-bold">{history.length}</p>
           </div>
         </div>
 
-        {/* TABS (Green Selection) */}
-        <div className="flex gap-4 border-b border-gray-200 pb-1">
-          <button
-            onClick={() => setActiveTab("active")}
-            className={`flex items-center gap-2 pb-3 px-2 transition-colors font-bold text-sm ${activeTab === "active" ? "text-green-600 border-b-2 border-green-600" : "text-gray-400 hover:text-gray-600"}`}
-          >
-            <Clock size={16} /> Active Tasks
-          </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`flex items-center gap-2 pb-3 px-2 transition-colors font-bold text-sm ${activeTab === "history" ? "text-green-600 border-b-2 border-green-600" : "text-gray-400 hover:text-gray-600"}`}
-          >
-            <Archive size={16} /> Job History
-          </button>
+        {/* TABS */}
+        <div className="flex justify-between items-end border-b border-gray-200 pb-1">
+          <div className="flex gap-4">
+            <button
+              onClick={() => setActiveTab("active")}
+              className={`flex items-center gap-2 pb-2 px-2 font-bold text-sm ${activeTab === "active" ? "text-green-600 border-b-2 border-green-600" : "text-gray-400 hover:text-gray-600"}`}
+            >
+              <Clock size={16} /> Active Tasks
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`flex items-center gap-2 pb-2 px-2 font-bold text-sm ${activeTab === "history" ? "text-green-600 border-b-2 border-green-600" : "text-gray-400 hover:text-gray-600"}`}
+            >
+              <Archive size={16} /> History
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* CONTENT AREA */}
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {loading ? (
-          <div className="p-12 text-center text-gray-500 flex flex-col items-center">
-            <Loader className="w-8 h-8 animate-spin text-green-600 mb-2" />
+          <div className="p-12 text-center text-gray-500">
+            <Loader className="w-8 h-8 animate-spin text-green-600 mx-auto mb-2" />
             Loading data...
           </div>
         ) : (
           <>
-            {/* === ACTIVE JOBS TAB === */}
+            {/* ACTIVE JOBS */}
             {activeTab === "active" && (
-              <div className="space-y-4">
+              <>
                 {jobs.length === 0 ? (
                   <div className="text-center p-12 bg-white rounded-2xl border border-dashed border-gray-300 text-gray-400">
-                    <Truck className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                    No active jobs.
-                    <p className="text-xs mt-2">
-                      New assignments will appear here.
-                    </p>
+                    <CheckCircle className="w-12 h-12 text-green-100 mx-auto mb-2" />
+                    No active jobs assigned.
                   </div>
                 ) : (
-                  jobs.map((job) => (
-                    <div
-                      key={job.id}
-                      className={`bg-white p-5 rounded-xl shadow-sm border-l-4 transition-all hover:shadow-md ${job.status === "collected" ? "border-gray-400 opacity-70 bg-gray-50" : "border-green-600"}`}
-                    >
-                      <div className="flex justify-between items-start mb-4 border-b border-gray-50 pb-3">
-                        <span
-                          className={`text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide ${job.status === "collected" ? "bg-gray-200 text-gray-700" : "bg-green-100 text-green-700"}`}
-                        >
-                          {job.status}
-                        </span>
-                        <span className="text-xs text-gray-500 font-medium bg-gray-50 px-2 py-1 rounded">
-                          {new Date(job.scheduled_date).toDateString()}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-gray-700">
-                            <User size={16} className="text-gray-400" />
-                            <span className="font-bold">
-                              {job.user_full_name}
-                            </span>
+                  <div className="space-y-6">
+                    {Object.entries(groupJobsByAssignmentDate(jobs)).map(
+                      ([date, dateJobs]) => (
+                        <div key={date}>
+                          {/* --- HEADER: ASSIGNED DATE --- */}
+                          <div className="flex items-center gap-2 mb-3 ml-1">
+                            <CalendarClock
+                              size={16}
+                              className="text-orange-500"
+                            />
+                            <h3 className="text-sm font-bold text-gray-500 uppercase">
+                              Assigned On: {date}
+                            </h3>
                           </div>
-                          <div className="flex items-center gap-2 text-gray-600 text-sm">
-                            <Package size={16} className="text-gray-400" />
-                            <span>
-                              {job.waste_type} - {job.quantity}
-                            </span>
+
+                          <div className="space-y-4">
+                            {dateJobs.map((job) => {
+                              const coords = getJobCoordinates(job);
+                              return (
+                                <div
+                                  key={job.id}
+                                  className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition"
+                                >
+                                  <div className="flex justify-between items-start mb-4">
+                                    <span className="text-xs font-bold px-3 py-1 rounded-full uppercase bg-blue-50 text-blue-600 border border-blue-100">
+                                      {job.status}
+                                    </span>
+                                    <span className="text-xs text-gray-400 font-medium">
+                                      #{job.id}
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    <div className="space-y-2">
+                                      <div className="flex items-center gap-2 text-gray-800">
+                                        <User
+                                          size={16}
+                                          className="text-gray-400"
+                                        />
+                                        <span className="font-bold text-sm">
+                                          {job.user_full_name}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 text-gray-600 text-sm">
+                                        <Package
+                                          size={16}
+                                          className="text-gray-400"
+                                        />
+                                        <span>
+                                          {job.waste_type} - {job.quantity}
+                                        </span>
+                                      </div>
+
+                                      {/* --- SCHEDULED PICKUP DATE --- */}
+                                      <div className="flex items-center gap-2 text-orange-600 text-sm font-medium bg-orange-50 p-2 rounded-lg w-fit mt-1">
+                                        <Calendar size={14} />
+                                        <span>
+                                          Pickup Date:{" "}
+                                          {new Date(
+                                            job.scheduled_date,
+                                          ).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-2">
+                                      <div className="flex items-start gap-2 text-gray-600 text-xs bg-gray-50 p-2.5 rounded-lg border border-gray-100">
+                                        <MapPin
+                                          size={14}
+                                          className="text-green-600 mt-0.5 shrink-0"
+                                        />
+                                        <span>
+                                          {job.pickup_address ||
+                                            "No address provided"}
+                                          , {job.region}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex gap-2 border-t border-gray-50 pt-4">
+                                    <button
+                                      onClick={() =>
+                                        openGoogleMaps(coords[0], coords[1])
+                                      }
+                                      className="flex-1 flex items-center justify-center gap-2 text-xs font-bold text-blue-700 bg-blue-50 py-2.5 rounded-lg hover:bg-blue-100 transition"
+                                    >
+                                      <Navigation size={14} /> Navigate
+                                    </button>
+                                    {job.status === "assigned" && (
+                                      <button
+                                        onClick={() => handleConfirm(job.id)}
+                                        className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-bold hover:bg-green-700 flex items-center justify-center gap-2 transition text-xs"
+                                      >
+                                        <CheckCircle size={14} /> Complete Job
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
-                        <div className="flex items-start gap-2 text-gray-600 text-sm bg-gray-50 p-3 rounded-lg">
-                          <MapPin size={16} className="text-green-600 mt-0.5" />
-                          <span>{job.center_name}</span>
-                        </div>
-                      </div>
-                      {job.status === "assigned" ? (
-                        <button
-                          onClick={() => handleConfirm(job.id)}
-                          className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 flex items-center justify-center gap-2 transition-colors shadow-sm"
-                        >
-                          <CheckCircle size={18} /> Confirm Collection
-                        </button>
-                      ) : (
-                        <div className="w-full bg-gray-100 text-gray-600 py-2 rounded-lg font-bold text-center border border-gray-200 text-sm flex items-center justify-center gap-2">
-                          <CheckCircle size={16} /> Collected - Pending
-                          Verification
-                        </div>
-                      )}
-                    </div>
-                  ))
+                      ),
+                    )}
+                  </div>
                 )}
-              </div>
+              </>
             )}
 
-            {/* === HISTORY TAB === */}
+            {/* HISTORY */}
             {activeTab === "history" && (
               <div className="space-y-4">
                 {history.length === 0 ? (
@@ -215,7 +299,7 @@ const CollectorDashboard = () => {
                   history.map((job) => (
                     <div
                       key={job.id}
-                      className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex justify-between items-center opacity-75 hover:opacity-100 transition-opacity"
+                      className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex justify-between items-center opacity-75"
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
@@ -227,11 +311,7 @@ const CollectorDashboard = () => {
                           </span>
                         </div>
                         <p className="font-bold text-gray-700 text-sm">
-                          {job.user_full_name} - {job.waste_type} (
-                          {job.quantity})
-                        </p>
-                        <p className="text-xs text-gray-500 flex items-center gap-1">
-                          <MapPin size={10} /> {job.center_name}
+                          {job.user_full_name} - {job.waste_type}
                         </p>
                       </div>
                     </div>

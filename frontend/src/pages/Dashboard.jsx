@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { centerAPI, api } from "../services/api";
+import toast from "react-hot-toast";
 import {
   MapPin,
   Trophy,
@@ -12,6 +13,9 @@ import {
   Clock,
   CheckCircle,
   History,
+  Calendar,
+  CalendarClock,
+  CreditCard,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -23,13 +27,31 @@ const Dashboard = () => {
   );
   const [centerCount, setCenterCount] = useState(0);
   const [leaders, setLeaders] = useState([]);
-
-  // STATE FOR HISTORY
   const [activity, setActivity] = useState({ pending: [], history: [] });
-
   const [loading, setLoading] = useState(true);
 
-  // Helper: Calculate Badge Progress
+  // --- PAYMENT HANDLER ---
+  const handlePayment = async (pickupId) => {
+    if (!window.confirm("Pay KES 100 for waste collection service?")) return;
+
+    const toastId = toast.loading("Processing M-Pesa payment...");
+    try {
+      await api.post("/users/payment/initiate/", {
+        pickup_id: pickupId,
+        amount: 100,
+        phone: profile.phone || currentUser.phone,
+      });
+      toast.success("Payment Received!", { id: toastId });
+
+      const historyRes = await api.get("/users/history/");
+      const historyData = historyRes.pending ? historyRes : historyRes.data;
+      setActivity(historyData || { pending: [], history: [] });
+    } catch (error) {
+      console.error(error);
+      toast.error("Payment failed. Please try again.", { id: toastId });
+    }
+  };
+
   const getBadgeProgress = (points) => {
     if (points >= 2000)
       return { next: "Max Level", target: 2000, percent: 100 };
@@ -62,7 +84,6 @@ const Dashboard = () => {
 
   const progress = getBadgeProgress(profile.points || 0);
 
-  // Helper: Get Rank Icon
   const getRankIcon = (index) => {
     if (index === 0)
       return <Crown className="w-5 h-5 text-yellow-500 fill-yellow-500" />;
@@ -75,10 +96,42 @@ const Dashboard = () => {
     );
   };
 
+  // Helper: Get Display Name
+  const getDisplayName = (userObj) => {
+    if (userObj.full_name && userObj.full_name.trim() !== "")
+      return userObj.full_name;
+    if (userObj.first_name)
+      return `${userObj.first_name} ${userObj.last_name || ""}`;
+    // Fallback: Use part of email before @
+    if (userObj.email) return userObj.email.split("@")[0];
+    return "Resident";
+  };
+
+  const groupPendingByBookingDate = (items) => {
+    const groups = {};
+    const sorted = [...items].sort((a, b) => {
+      const dateA = new Date(a.created_at || Date.now());
+      const dateB = new Date(b.created_at || Date.now());
+      return dateB - dateA;
+    });
+
+    sorted.forEach((item) => {
+      const dateObj = new Date(item.created_at || Date.now());
+      const dateStr = dateObj.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+      });
+
+      if (!groups[dateStr]) groups[dateStr] = [];
+      groups[dateStr].push(item);
+    });
+    return groups;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch everything in parallel
         const [centersRes, profileRes, leaderboardRes, historyRes] =
           await Promise.all([
             centerAPI.getAll(),
@@ -87,20 +140,15 @@ const Dashboard = () => {
             api.get("/users/history/"),
           ]);
 
-        // --- 1. Handle Centers ---
         const centers = Array.isArray(centersRes)
           ? centersRes
           : centersRes.results || [];
         setCenterCount(centers.length);
-
-        // --- 2. Handle Profile ---
         setProfile(profileRes.data || profileRes);
 
-        // --- 3. Handle Leaderboard ---
         const leadersData = leaderboardRes.data || leaderboardRes;
         setLeaders(Array.isArray(leadersData) ? leadersData : []);
 
-        // --- 4. Handle History ---
         const historyData = historyRes.pending ? historyRes : historyRes.data;
         if (historyData && historyData.pending) {
           setActivity(historyData);
@@ -135,7 +183,9 @@ const Dashboard = () => {
                 {profile.badge || "Newcomer"}
               </span>
             </div>
-            <h1 className="text-3xl font-bold">Hello, {profile.full_name}!</h1>
+            <h1 className="text-3xl font-bold">
+              Hello, {getDisplayName(profile)}!
+            </h1>
             <p className="text-green-50 opacity-90 mt-2">
               You have earned <strong>{profile.points} points</strong>.
             </p>
@@ -218,43 +268,74 @@ const Dashboard = () => {
           </h2>
 
           {activity.pending && activity.pending.length > 0 ? (
-            <div className="space-y-3">
-              {activity.pending.map((req) => (
-                <div
-                  key={req.id}
-                  className={`p-3 border rounded-lg flex justify-between items-center ${
-                    req.status === "cancelled"
-                      ? "bg-red-50 border-red-100"
-                      : "bg-orange-50 border-orange-100"
-                  }`}
-                >
-                  <div>
-                    <p className="font-bold text-sm text-gray-800">
-                      {req.waste_type} ({req.quantity})
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(req.scheduled_date).toDateString()}
-                    </p>
+            <div className="space-y-6">
+              {Object.entries(groupPendingByBookingDate(activity.pending)).map(
+                ([dateLabel, groupReqs]) => (
+                  <div key={dateLabel}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <CalendarClock size={14} className="text-orange-400" />
+                      <span className="text-xs font-bold text-gray-500 uppercase">
+                        Booked on: {dateLabel}
+                      </span>
+                    </div>
 
-                    {/* Show Rejection Reason */}
-                    {req.status === "cancelled" && (
-                      <p className="text-xs text-red-600 font-bold mt-1">
-                        ⚠️ {req.rejection_reason || "Request declined"}
-                      </p>
-                    )}
+                    <div className="space-y-3">
+                      {groupReqs.map((req) => (
+                        <div
+                          key={req.id}
+                          className={`p-3 border rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${req.status === "cancelled" ? "bg-red-50 border-red-100" : "bg-orange-50 border-orange-100"}`}
+                        >
+                          <div>
+                            <p className="font-bold text-sm text-gray-800">
+                              {req.waste_type} ({req.quantity})
+                            </p>
+                            <div className="flex items-center gap-1.5 text-xs text-gray-600 mt-1.5">
+                              <Calendar size={12} className="text-green-600" />
+                              <span>
+                                Scheduled:{" "}
+                                <b>
+                                  {new Date(
+                                    req.scheduled_date,
+                                  ).toLocaleDateString()}
+                                </b>
+                              </span>
+                            </div>
+                            {req.status === "cancelled" && (
+                              <p className="text-xs text-red-600 font-bold mt-1">
+                                ⚠️ {req.rejection_reason || "Request declined"}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-center">
+                            {req.payment_status === "Paid" ? (
+                              <span className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm">
+                                <CheckCircle size={12} /> PAID
+                              </span>
+                            ) : (
+                              req.status === "pending" && (
+                                <button
+                                  onClick={() => handlePayment(req.id)}
+                                  className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-700 transition shadow-sm animate-pulse"
+                                >
+                                  <CreditCard size={12} /> Pay KES 100
+                                </button>
+                              )
+                            )}
+                            <span
+                              className={`text-xs font-bold px-2 py-1 rounded border capitalize ${req.status === "cancelled" ? "bg-white text-red-600 border-red-200" : req.status === "assigned" ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-orange-600 border-orange-200"}`}
+                            >
+                              {req.status === "cancelled"
+                                ? "Rejected"
+                                : req.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-
-                  <span
-                    className={`text-xs font-bold px-2 py-1 rounded border ${
-                      req.status === "cancelled"
-                        ? "bg-white text-red-600 border-red-200"
-                        : "bg-white text-orange-600 border-orange-200"
-                    }`}
-                  >
-                    {req.status === "cancelled" ? "Rejected" : "Processing"}
-                  </span>
-                </div>
-              ))}
+                ),
+              )}
             </div>
           ) : (
             <p className="text-sm text-gray-400 italic">No recent requests.</p>
@@ -315,11 +396,7 @@ const Dashboard = () => {
             leaders.map((player, index) => (
               <div
                 key={player.id || index}
-                className={`flex items-center justify-between p-4 hover:bg-gray-50 transition ${
-                  currentUser?.email === player.email
-                    ? "bg-yellow-50 border-l-4 border-yellow-400"
-                    : ""
-                }`}
+                className={`flex items-center justify-between p-4 hover:bg-gray-50 transition ${currentUser?.email === player.email ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}`}
               >
                 <div className="flex items-center gap-4">
                   <div className="w-8 flex justify-center">
@@ -327,29 +404,19 @@ const Dashboard = () => {
                   </div>
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                        index === 0
-                          ? "bg-yellow-500"
-                          : index === 1
-                            ? "bg-gray-400"
-                            : index === 2
-                              ? "bg-orange-400"
-                              : "bg-green-600"
-                      }`}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-gray-400" : index === 2 ? "bg-orange-400" : "bg-green-600"}`}
                     >
-                      {player.full_name ? (
-                        player.full_name[0].toUpperCase()
-                      ) : (
-                        <User className="w-4 h-4" />
-                      )}
+                      {getDisplayName(player)[0].toUpperCase()}
                     </div>
                     <div>
+                      {/* --- FIX: USE DISPLAY NAME FUNCTION --- */}
                       <p
                         className={`text-sm font-bold ${currentUser?.email === player.email ? "text-green-800" : "text-gray-800"}`}
                       >
-                        {player.full_name || "Anonymous"}{" "}
+                        {getDisplayName(player)}
                         {currentUser?.email === player.email && " (You)"}
                       </p>
+                      {/* -------------------------------------- */}
                       <p className="text-xs text-gray-400">{player.badge}</p>
                     </div>
                   </div>
