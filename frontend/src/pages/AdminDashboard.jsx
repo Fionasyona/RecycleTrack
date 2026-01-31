@@ -1,12 +1,13 @@
 import {
   AlertTriangle,
   Archive,
+  Calendar, // <--- ADDED THIS (Was missing)
   CalendarClock,
   CheckCircle,
   Clock,
   DollarSign,
   Loader,
-  MapPin,
+  MapPin, // <--- Ensure this stays here
   Package,
   RefreshCw,
   ShieldCheck,
@@ -378,6 +379,16 @@ const AdminDashboard = () => {
                                       className="text-gray-400"
                                     />{" "}
                                     {req.center_name}
+                                  </div>
+                                  <div className="text-xs text-gray-500 flex items-center gap-2 col-span-2">
+                                    {/* THIS WAS CAUSING THE ERROR IF IMPORT MISSING */}
+                                    <Calendar
+                                      size={14}
+                                      className="text-gray-400"
+                                    />{" "}
+                                    {new Date(
+                                      req.scheduled_date,
+                                    ).toLocaleDateString()}
                                   </div>
                                 </div>
 

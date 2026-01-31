@@ -7,8 +7,8 @@ import AdminLayout from "./components/layouts/AdminLayout";
 import MainLayout from "./components/layouts/MainLayout";
 
 // --- Guards ---
-import AdminGuard from "./components/auth/AdminGuard";
-import ProtectedRoute from "./routes/ProtectedRoute";
+// WE USE THE NEW ROLE GUARD NOW
+import RoleGuard from "./components/auth/RoleGuard";
 
 // --- Pages: Public & User ---
 import ArticleDetail from "./pages/education/ArticleDetail";
@@ -27,7 +27,7 @@ import UsersManagement from "./pages/UsersManagement";
 import ManageCenters from "./pages/admin/ManageCenters";
 import AdminArticles from "./pages/admin/AdminArticles";
 
-//--- import Collector Dashboard ---
+//--- Pages: Collector ---
 import CollectorDashboard from "./pages/CollectorDashboard";
 import CollectorsManagement from "./pages/CollectorsManagement";
 
@@ -37,95 +37,65 @@ function App() {
       <AuthProvider>
         <Routes>
           {/* =======================================================
-              SECTION 1: USER APPLICATION (Uses MainLayout)
+              SECTION 1: PUBLIC ROUTES
              ======================================================= */}
           <Route element={<MainLayout />}>
-            {/* Public Routes */}
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/education" element={<Education />} />
-
-            {/* Dynamic Route for Article Details */}
             <Route path="/education/:id" element={<ArticleDetail />} />
-
-            {/* Protected User Routes (Require Login) */}
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/maps"
-              element={
-                <ProtectedRoute>
-                  <MapView />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Route for Booking Pickup */}
-            <Route
-              path="/book-pickup"
-              element={
-                <ProtectedRoute>
-                  <BookPickup />
-                </ProtectedRoute>
-              }
-            />
           </Route>
 
           {/* =======================================================
-              SECTION 2: COLLECTOR PORTAL (Standalone)
+              SECTION 2: RESIDENT / USER ROUTES
+              Allowed: "resident", "admin", "service_provider"
              ======================================================= */}
-          <Route
-            path="/collector-dashboard"
-            element={
-              <ProtectedRoute>
-                <CollectorDashboard />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* =======================================================
-              SECTION 3: ADMIN PORTAL (Uses AdminLayout)
-             ======================================================= */}
-          <Route
-            path="/admin"
-            element={
-              <AdminGuard>
-                <AdminLayout />
-              </AdminGuard>
-            }
-          >
-            {/* The "index" route matches /admin exactly */}
-            <Route index element={<AdminDashboard />} />
-            {/* Admin Sub-routes (Nested inside Layout) */}
-            <Route path="users" element={<UsersManagement />} />
-            <Route path="collectors" element={<CollectorsManagement />} />{" "}
-            {/* <--- MOVED HERE */}
-            <Route path="centers" element={<ManageCenters />} />
-            <Route path="education" element={<AdminArticles />} />
+          <Route element={<MainLayout />}>
+            <Route
+              element={
+                <RoleGuard
+                  allowedRoles={["resident", "admin", "service_provider"]}
+                />
+              }
+            >
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/maps" element={<MapView />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/book-pickup" element={<BookPickup />} />
+            </Route>
           </Route>
 
           {/* =======================================================
-              SECTION 4: CATCH-ALL (404 Redirect)
+              SECTION 3: COLLECTOR (DRIVER) PORTAL
+              Allowed: ONLY "service_provider"
+             ======================================================= */}
+          <Route element={<RoleGuard allowedRoles={["service_provider"]} />}>
+            {/* Note: You can create a CollectorLayout if you want a specific sidebar for them */}
+            <Route path="/driver/dashboard" element={<CollectorDashboard />} />
+            {/* Add other driver routes here, e.g., /driver/pickups */}
+          </Route>
+
+          {/* =======================================================
+              SECTION 4: ADMIN PORTAL
+              Allowed: ONLY "admin"
+             ======================================================= */}
+          <Route path="/admin" element={<RoleGuard allowedRoles={["admin"]} />}>
+            <Route element={<AdminLayout />}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="users" element={<UsersManagement />} />
+              <Route path="collectors" element={<CollectorsManagement />} />
+              <Route path="centers" element={<ManageCenters />} />
+              <Route path="education" element={<AdminArticles />} />
+            </Route>
+          </Route>
+
+          {/* =======================================================
+              SECTION 5: CATCH-ALL (404)
              ======================================================= */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
-        {/* Global Toast Notifications */}
         <Toaster
           position="top-right"
           toastOptions={{

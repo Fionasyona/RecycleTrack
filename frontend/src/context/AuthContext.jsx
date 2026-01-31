@@ -9,15 +9,18 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const checkUserLoggedIn = async () => {
-      const token = localStorage.getItem("token");
+      // 1. Look for the correct key name "access_token"
+      const token = localStorage.getItem("access_token");
+
       if (token) {
         try {
           const res = await api.get("/users/profile/");
-          // Robust check: handle if 'res' is the data or 'res.data' is the data
           setUser(res.data || res);
         } catch (error) {
           console.error("Auth Check Failed:", error);
-          localStorage.removeItem("token");
+          // 2. Clear the correct keys on failure
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
           setUser(null);
         }
       }
@@ -27,37 +30,38 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    // 1. Post Credentials
     const res = await api.post("/users/auth/login/", { email, password });
-
-    // --- FIX: Handle Unwrapped Response ---
-    // If res.data exists, use it. If not, 'res' itself is likely the data.
     const data = res.data || res;
-    // --------------------------------------
 
     if (!data.access) {
       throw new Error("Login failed: No access token received.");
     }
 
-    // 2. Save Token
-    localStorage.setItem("token", data.access);
+    // 3. Save tokens with the names api.js expects
+    localStorage.setItem("access_token", data.access);
 
-    // 3. Set User State Immediately (Optimized)
-    // We configured the backend to send the 'user' object with the login response.
-    // This saves us an extra network call.
-    if (data.user) {
-      setUser(data.user);
+    if (data.refresh) {
+      localStorage.setItem("refresh_token", data.refresh);
     } else {
-      // Fallback: If backend didn't send user object, fetch it now
-      const profileRes = await api.get("/users/profile/");
-      setUser(profileRes.data || profileRes);
+      console.warn("Backend did not send a refresh token!");
     }
 
-    return true;
+    // 4. Update State & RETURN THE USER OBJECT (Critical Fix)
+    if (data.user) {
+      setUser(data.user);
+      return data.user; // <--- Returns user object to Login.jsx
+    } else {
+      // Fallback: fetch profile if login response didn't include user data
+      const profileRes = await api.get("/users/profile/");
+      const userData = profileRes.data || profileRes;
+      setUser(userData);
+      return userData; // <--- Returns user object to Login.jsx
+    }
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
     setUser(null);
   };
 

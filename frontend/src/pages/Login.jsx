@@ -29,20 +29,23 @@ const Login = () => {
       // 1. Login and GET the user data immediately
       const user = await login(formData.email, formData.password);
 
-      toast.success(`Welcome back, ${user.first_name || "User"}!`);
+      // --- POPUP LOGIC ---
+      let displayRole = "User";
+      if (user.role === "admin" || user.is_superuser) displayRole = "Admin";
+      else if (user.role === "service_provider") displayRole = "Driver";
 
-      // 2. Direct Logic based on the data we just received
+      toast.success(`Welcome, ${displayRole}!`);
+
+      // 2. FIXED REDIRECTS
       if (user.role === "admin" || user.is_superuser) {
+        // Admin -> Admin Index
         navigate("/admin", { replace: true });
-      }
-      // --- FIX: Redirect Drivers to their specific dashboard ---
-      else if (user.role === "service_provider") {
-        navigate("/collector-dashboard", { replace: true });
-      }
-      // --------------------------------------------------------
-      else {
-        // Residents go to the standard dashboard (or where they tried to go)
-        navigate(from, { replace: true });
+      } else if (user.role === "service_provider") {
+        // FIX: Driver -> "/driver/dashboard" (Matches your App.js)
+        navigate("/driver/dashboard", { replace: true });
+      } else {
+        // Resident -> User Dashboard
+        navigate(from === "/login" ? "/dashboard" : from, { replace: true });
       }
     } catch (error) {
       console.error("Login UI Error:", error);
@@ -59,7 +62,7 @@ const Login = () => {
       <div className="max-w-md w-full">
         {/* Logo & Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 rounded-2xl shadow-lg mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-green-600 rounded-2xl shadow-lg mb-4">
             <Leaf className="w-10 h-10 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Welcome Back</h1>
@@ -91,7 +94,7 @@ const Login = () => {
             <Button
               type="submit"
               variant="primary"
-              className="w-full"
+              className="w-full bg-green-600 hover:bg-green-700 text-white"
               loading={loading}
             >
               Login
@@ -99,9 +102,15 @@ const Login = () => {
           </form>
 
           <div className="mt-6 text-center">
-            <Link to="/register" className="text-primary-600 hover:underline">
-              Create an Account
-            </Link>
+            <p className="text-sm text-gray-600">
+              Don't have an account?{" "}
+              <Link
+                to="/register"
+                className="text-green-600 hover:underline font-medium"
+              >
+                Create an Account
+              </Link>
+            </p>
           </div>
         </div>
       </div>

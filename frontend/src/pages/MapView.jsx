@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import { MapPin, Navigation, Phone, Globe } from "lucide-react";
 import L from "leaflet";
 import toast from "react-hot-toast";
-import "leaflet/dist/leaflet.css"; // Ensure CSS is imported
+import "leaflet/dist/leaflet.css";
 
 // --- LEAFLET ICON FIX ---
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -19,7 +19,7 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// Custom Icon for User Location (Gold/Yellow)
+// Custom Icon for User Location
 const userIcon = new L.Icon({
   iconUrl:
     "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-gold.png",
@@ -31,32 +31,24 @@ const userIcon = new L.Icon({
   shadowSize: [41, 41],
 });
 
-// --- NEW HELPER: Handles Flying to Locations ---
-// This component watches for changes in "targetCenter" and moves the map automatically
+// Helper: Handles Flying to Locations
 const FlyToLocation = ({ targetCenter }) => {
   const map = useMap();
-
   useEffect(() => {
     if (targetCenter) {
       map.flyTo(targetCenter, 15, {
         animate: true,
-        duration: 1.5, // Smooth flight duration
+        duration: 1.5,
       });
     }
   }, [targetCenter, map]);
-
   return null;
 };
 
 const MapView = () => {
   const [centers, setCenters] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
-
-  // This state controls where the map looks.
-  // It changes when you click the sidebar OR find your location.
   const [viewPosition, setViewPosition] = useState(null);
-
-  // Track which center is selected to highlight it in the sidebar
   const [selectedCenterId, setSelectedCenterId] = useState(null);
 
   // Default center (Nairobi)
@@ -84,23 +76,18 @@ const MapView = () => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
           setUserLocation({ lat, lng });
-
-          // Automatically fly to user location on load
           setViewPosition([lat, lng]);
         },
         (error) => {
           console.log("Location access denied:", error);
           toast("Enable location to see centers near you", { icon: "📍" });
-        }
+        },
       );
     }
   };
 
-  // Handler for clicking a sidebar item
   const handleCenterClick = (center) => {
-    // 1. Set the map target to this center's coordinates
     setViewPosition([center.latitude, center.longitude]);
-    // 2. Set active ID for highlighting
     setSelectedCenterId(center.id);
   };
 
@@ -120,7 +107,7 @@ const MapView = () => {
           {centers.map((center) => (
             <div
               key={center.id}
-              onClick={() => handleCenterClick(center)} // <--- CLICK HANDLER
+              onClick={() => handleCenterClick(center)}
               className={`p-4 transition cursor-pointer hover:bg-green-50 ${
                 selectedCenterId === center.id
                   ? "bg-green-50 border-l-4 border-green-500"
@@ -159,7 +146,6 @@ const MapView = () => {
             attribution="© OpenStreetMap contributors"
           />
 
-          {/* This invisible component handles the flying animation */}
           <FlyToLocation targetCenter={viewPosition} />
 
           {/* User Marker */}
@@ -220,6 +206,7 @@ const MapView = () => {
                     <strong>Accepts:</strong> {center.accepted_materials}
                   </div>
 
+                  {/* --- FIXED GOOGLE MAPS LINK --- */}
                   <a
                     href={`https://www.google.com/maps/dir/?api=1&destination=${center.latitude},${center.longitude}`}
                     target="_blank"

@@ -8,9 +8,9 @@ import {
   Trash,
   X,
   MapPin,
-  Phone,
   Search,
   Loader,
+  Crosshair,
 } from "lucide-react";
 import {
   MapContainer,
@@ -23,7 +23,6 @@ import toast from "react-hot-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// --- LEAFLET ICON FIX ---
 import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 
@@ -36,8 +35,6 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 
 // --- MAP HELPERS ---
-
-// 1. Click Listener: Allows manual adjustments by clicking
 const LocationMarker = ({ position, setPosition }) => {
   useMapEvents({
     click(e) {
@@ -47,12 +44,11 @@ const LocationMarker = ({ position, setPosition }) => {
   return position ? <Marker position={position} /> : null;
 };
 
-// 2. Auto-Fly: Moves the map when the coordinates change (e.g. after searching)
 const MapUpdater = ({ center }) => {
   const map = useMap();
   useEffect(() => {
     if (center) {
-      map.flyTo(center, 15); // Zoom level 15 for close-up accuracy
+      map.flyTo(center, 16);
     }
   }, [center, map]);
   return null;
@@ -63,9 +59,8 @@ const ManageCenters = () => {
   const [loading, setLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState(null);
-
-  // State for the "Searching..." loading spinner
   const [searchingLocation, setSearchingLocation] = useState(false);
+  const [gettingAddress, setGettingAddress] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -78,7 +73,7 @@ const ManageCenters = () => {
     image: null,
   });
 
-  const defaultCenter = [-1.2921, 36.8219]; // Nairobi Default
+  const defaultCenter = [-1.2921, 36.8219];
 
   useEffect(() => {
     fetchCenters();
@@ -96,37 +91,89 @@ const ManageCenters = () => {
     }
   };
 
-  // --- NEW: SMART SEARCH FUNCTION ---
+  // --- REVERSE GEOCODING (Coords -> Address) ---
+  const reverseGeocode = async (lat, lng) => {
+    setGettingAddress(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+      );
+      const data = await response.json();
+
+      if (data && data.display_name) {
+        const cleanAddress = data.display_name.split(",").slice(0, 3).join(",");
+        setFormData((prev) => ({
+          ...prev,
+          address: cleanAddress,
+        }));
+        toast.success("Address updated from map!");
+      }
+    } catch (error) {
+      console.error("Reverse geocode failed", error);
+    } finally {
+      setGettingAddress(false);
+    }
+  };
+
+  // --- GEOCODING (Address -> Coords) ---
   const handleGeocode = async () => {
-    // 1. Validation
-    if (!formData.address || formData.address.length < 3) {
-      toast.error("Please enter a valid address or landmark first");
+    const input = formData.address;
+
+    if (!input || input.length < 3) {
+      toast.error("Enter an address OR paste coordinates");
       return;
     }
 
     setSearchingLocation(true);
+
+    const coordinateRegex = /^(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)$/;
+    const match = input.match(coordinateRegex);
+
+    if (match) {
+      // COORDINATE PASTE DETECTED
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[3]);
+
+      setFormData((prev) => ({
+        ...prev,
+        latitude: lat,
+        longitude: lng,
+      }));
+      await reverseGeocode(lat, lng);
+      setSearchingLocation(false);
+      return;
+    }
+
+    // NAME SEARCH
     try {
-      // 2. Call OpenStreetMap Nominatim API (Free)
-      const query = encodeURIComponent(formData.address + ", Kenya"); // Adding ", Kenya" improves accuracy
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${query}`
+      let query = encodeURIComponent(input + ", Nairobi");
+      let response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${query}`,
       );
-      const data = await response.json();
+      let data = await response.json();
+
+      if (!data || data.length === 0) {
+        query = encodeURIComponent(input + ", Kenya");
+        response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${query}`,
+        );
+        data = await response.json();
+      }
 
       if (data && data.length > 0) {
-        // 3. Success! Update coordinates
         const location = data[0];
         setFormData((prev) => ({
           ...prev,
           latitude: parseFloat(location.lat),
           longitude: parseFloat(location.lon),
         }));
-        toast.success(`Found: ${location.display_name.split(",")[0]}`);
+        const shortName = location.display_name.split(",")[0];
+        toast.success(`Found: ${shortName}`);
       } else {
-        toast.error("Location not found. Try adding the city name.");
+        toast.error("Address not found.");
       }
     } catch (error) {
-      toast.error("Could not search location. Check internet.");
+      toast.error("Connection error.");
     } finally {
       setSearchingLocation(false);
     }
@@ -138,23 +185,34 @@ const ManageCenters = () => {
       latitude: latlng.lat,
       longitude: latlng.lng,
     }));
+    reverseGeocode(latlng.lat, latlng.lng);
   };
 
+  // --- FIXED HANDLE SUBMIT ---
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // 1. Validate Location
     if (!formData.latitude || !formData.longitude) {
       toast.error("Please set a location on the map!");
       return;
     }
 
     const data = new FormData();
-    Object.keys(formData).forEach((key) => {
-      if (key === "image") {
-        if (formData.image instanceof File) data.append(key, formData.image);
-      } else if (formData[key] !== null && formData[key] !== "") {
-        data.append(key, formData[key]);
-      }
-    });
+
+    // 2. Explicitly append fields to avoid issues
+    data.append("name", formData.name);
+    data.append("address", formData.address);
+    data.append("phone", formData.phone || "");
+    data.append("website", formData.website || "");
+    data.append("accepted_materials", formData.accepted_materials);
+    data.append("latitude", formData.latitude);
+    data.append("longitude", formData.longitude);
+
+    // 3. Handle Image: Only append if it's a new File object
+    if (formData.image instanceof File) {
+      data.append("image", formData.image);
+    }
 
     try {
       setLoading(true);
@@ -168,8 +226,17 @@ const ManageCenters = () => {
       resetForm();
       fetchCenters();
     } catch (error) {
-      console.error(error);
-      toast.error("Operation failed");
+      console.error("Submit Error:", error);
+
+      // 4. Show Specific Backend Error
+      if (error.response && error.response.data) {
+        const errorMsg = Object.entries(error.response.data)
+          .map(([key, msgs]) => `${key}: ${msgs}`)
+          .join(", ");
+        toast.error(`Error: ${errorMsg}`);
+      } else {
+        toast.error("Operation failed. Check inputs.");
+      }
     } finally {
       setLoading(false);
     }
@@ -195,7 +262,7 @@ const ManageCenters = () => {
       accepted_materials: center.accepted_materials,
       latitude: center.latitude,
       longitude: center.longitude,
-      image: center.image,
+      image: center.image, // URL string
     });
     setCurrentId(center.id);
     setIsEditing(true);
@@ -256,40 +323,45 @@ const ManageCenters = () => {
                 required
               />
 
-              {/* --- NEW ADDRESS SECTION WITH SEARCH BUTTON --- */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Address / Landmark
+                  Location (Address OR Coordinates)
                 </label>
                 <div className="flex gap-2">
-                  <div className="flex-1">
+                  <div className="flex-1 relative">
                     <Input
                       value={formData.address}
                       onChange={(e) =>
                         setFormData({ ...formData, address: e.target.value })
                       }
-                      placeholder="e.g. Westgate Mall, Westlands"
+                      placeholder="Address auto-fills when you click map"
                       required
                     />
+                    {gettingAddress && (
+                      <div className="absolute right-3 top-2.5">
+                        <Loader className="w-4 h-4 animate-spin text-gray-400" />
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
                     onClick={handleGeocode}
                     disabled={searchingLocation}
                     className="bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 transition flex items-center justify-center min-w-[120px]"
-                    title="Find GPS coordinates for this address"
+                    title="Search Address or Jump to Coordinates"
                   >
                     {searchingLocation ? (
                       <Loader className="w-4 h-4 animate-spin mr-2" />
                     ) : (
                       <Search className="w-4 h-4 mr-2" />
                     )}
-                    {searchingLocation ? "Finding..." : "Find on Map"}
+                    Find
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Tip: Enter a specific landmark (e.g., "Sarit Centre") for
-                  better accuracy.
+                <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                  <Crosshair size={12} />
+                  <strong>Tip:</strong> Click map to auto-fill address, or paste
+                  coords (e.g. -1.32, 36.8)
                 </p>
               </div>
 
@@ -359,7 +431,6 @@ const ManageCenters = () => {
                     attribution="&copy; OpenStreetMap contributors"
                   />
 
-                  {/* --- NEW: Auto-Fly to new coordinates when found --- */}
                   {formData.latitude && (
                     <MapUpdater
                       center={[formData.latitude, formData.longitude]}
@@ -400,7 +471,7 @@ const ManageCenters = () => {
         </div>
       )}
 
-      {/* List Section remains the same */}
+      {/* List Section */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {centers.map((center) => (
           <div
