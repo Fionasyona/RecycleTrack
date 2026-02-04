@@ -18,6 +18,7 @@ class IsAdminOrReadOnly(permissions.BasePermission):
         
         # 2. Write permissions are only allowed to the Admin
         # We check if the user is authenticated AND has the role 'admin'
+        # Using getattr ensures it doesn't crash if 'role' is missing
         return (request.user and 
                 request.user.is_authenticated and 
                 getattr(request.user, 'role', '') == 'admin')
@@ -42,8 +43,21 @@ class ArticleViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-published_date')
 
     def perform_create(self, serializer):
-        # Automatically set the author to "Admin" or the user's name if not provided
-        author_name = self.request.user.full_name if self.request.user.full_name else "RecycleTrack Admin"
+        """
+        FIXED: Safely get the user's name without causing an AttributeError.
+        """
+        user = self.request.user
+        author_name = "RecycleTrack Admin" # Default fallback
+
+        # Check if the user has a method to get full name (Standard Django)
+        if hasattr(user, 'get_full_name') and user.get_full_name():
+            author_name = user.get_full_name()
+        # Fallback to username or email if no full name
+        elif hasattr(user, 'username') and user.username:
+            author_name = user.username
+        elif hasattr(user, 'email') and user.email:
+            author_name = user.email.split('@')[0]
+
         serializer.save(author=author_name)
 
     def retrieve(self, request, *args, **kwargs):
