@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
-import { centerAPI } from "../services/api";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import { MapPin, Navigation, Phone, Globe } from "lucide-react";
 import L from "leaflet";
-import toast from "react-hot-toast";
 import "leaflet/dist/leaflet.css";
+import { Globe, MapPin, Navigation, Phone, Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { centerAPI } from "../services/api";
 
 // --- LEAFLET ICON FIX ---
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -50,6 +50,7 @@ const MapView = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [viewPosition, setViewPosition] = useState(null);
   const [selectedCenterId, setSelectedCenterId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Default center (Nairobi)
   const defaultCenter = [-1.2921, 36.8219];
@@ -91,31 +92,48 @@ const MapView = () => {
     setSelectedCenterId(center.id);
   };
 
+  const filteredCenters = centers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.address.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
   return (
-    <div className="h-[calc(100vh-64px)] relative flex flex-col md:flex-row">
-      {/* --- SIDEBAR LIST --- */}
-      <div className="hidden md:flex flex-col w-80 bg-white border-r border-gray-200 shadow-xl z-[1000] overflow-y-auto">
-        <div className="p-4 bg-green-600 text-white">
-          <h2 className="font-bold text-lg flex items-center gap-2">
-            <MapPin className="w-5 h-5" /> Recycling Points
-          </h2>
-          <p className="text-xs text-green-100 mt-1">
-            {centers.length} locations available
+    // REMOVED <MainLayout> WRAPPER
+    <div className="flex flex-col h-[calc(100vh-130px)] bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden md:flex-row">
+      {/* --- LEFT SIDEBAR: LIST --- */}
+      <div className="w-full md:w-80 border-r border-gray-200 flex flex-col bg-white z-10">
+        <div className="p-4 border-b border-gray-100 bg-gray-50">
+          <div className="relative">
+            <Search className="absolute left-3 top-3 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              placeholder="Search centers..."
+              className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <p className="text-xs text-gray-500 mt-2 font-medium px-1">
+            {filteredCenters.length} locations found
           </p>
         </div>
-        <div className="divide-y divide-gray-100">
-          {centers.map((center) => (
+
+        <div className="flex-1 overflow-y-auto">
+          {filteredCenters.map((center) => (
             <div
               key={center.id}
               onClick={() => handleCenterClick(center)}
-              className={`p-4 transition cursor-pointer hover:bg-green-50 ${
+              className={`p-4 border-b border-gray-100 cursor-pointer transition hover:bg-gray-50 ${
                 selectedCenterId === center.id
-                  ? "bg-green-50 border-l-4 border-green-500"
+                  ? "bg-green-50 border-l-4 border-l-green-500"
                   : ""
               }`}
             >
-              <h3 className="font-semibold text-gray-800">{center.name}</h3>
-              <p className="text-sm text-gray-500 mt-1">{center.address}</p>
+              <h3 className="font-bold text-gray-800 text-sm">{center.name}</h3>
+              <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                {center.address}
+              </p>
               <div className="flex flex-wrap gap-1 mt-2">
                 {center.accepted_materials
                   .split(",")
@@ -123,7 +141,7 @@ const MapView = () => {
                   .map((mat, i) => (
                     <span
                       key={i}
-                      className="text-[10px] bg-white border border-green-100 text-green-700 px-1.5 py-0.5 rounded"
+                      className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200"
                     >
                       {mat.trim()}
                     </span>
@@ -134,7 +152,7 @@ const MapView = () => {
         </div>
       </div>
 
-      {/* --- MAP CONTAINER --- */}
+      {/* --- RIGHT SIDE: MAP --- */}
       <div className="flex-1 relative z-0">
         <MapContainer
           center={defaultCenter}
@@ -148,70 +166,41 @@ const MapView = () => {
 
           <FlyToLocation targetCenter={viewPosition} />
 
-          {/* User Marker */}
           {userLocation && (
             <Marker
               position={[userLocation.lat, userLocation.lng]}
               icon={userIcon}
             >
               <Popup>
-                <div className="text-center p-1">
-                  <strong className="text-indigo-600">You are here</strong>
+                <div className="text-center p-1 font-bold text-indigo-600">
+                  You are here
                 </div>
               </Popup>
             </Marker>
           )}
 
-          {/* Recycling Center Markers */}
           {centers.map((center) => (
             <Marker
               key={center.id}
               position={[center.latitude, center.longitude]}
+              eventHandlers={{
+                click: () => {
+                  setSelectedCenterId(center.id);
+                },
+              }}
             >
               <Popup>
                 <div className="min-w-[200px]">
-                  {center.image && (
-                    <img
-                      src={center.image}
-                      alt={center.name}
-                      className="w-full h-24 object-cover rounded-t-lg mb-2"
-                    />
-                  )}
-                  <h3 className="font-bold text-base text-gray-900">
-                    {center.name}
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-2">{center.address}</p>
-
-                  <div className="space-y-1 mb-3">
-                    {center.phone && (
-                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <Phone className="w-3 h-3" /> {center.phone}
-                      </div>
-                    )}
-                    {center.website && (
-                      <div className="flex items-center gap-2 text-xs text-blue-600">
-                        <Globe className="w-3 h-3" />
-                        <a
-                          href={center.website}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Visit Website
-                        </a>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="bg-green-50 p-2 rounded text-xs text-green-800">
+                  <h3 className="font-bold text-gray-900">{center.name}</h3>
+                  <p className="text-xs text-gray-500 mb-2">{center.address}</p>
+                  <div className="bg-green-50 p-2 rounded text-xs text-green-800 border border-green-100 mb-2">
                     <strong>Accepts:</strong> {center.accepted_materials}
                   </div>
-
-                  {/* --- FIXED GOOGLE MAPS LINK --- */}
                   <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${center.latitude},${center.longitude}`}
+                    href={`https://www.google.com/maps/search/?api=1&query=${center.latitude},${center.longitude}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="block w-full text-center mt-3 bg-green-600 text-white py-1.5 rounded text-sm hover:bg-green-700 transition"
+                    className="block w-full text-center bg-green-600 text-white py-1.5 rounded text-xs font-bold hover:bg-green-700 transition"
                   >
                     Get Directions
                   </a>
@@ -221,13 +210,12 @@ const MapView = () => {
           ))}
         </MapContainer>
 
-        {/* Mobile: Find Me Button */}
         <button
-          onClick={() => getUserLocation()}
-          className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-gray-700 hover:bg-gray-50 border border-gray-200"
+          onClick={getUserLocation}
+          className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-gray-700 hover:bg-gray-50 border border-gray-200 transition active:scale-95"
           title="Find My Location"
         >
-          <Navigation className="w-6 h-6" />
+          <Navigation className="w-5 h-5 text-blue-600" />
         </button>
       </div>
     </div>

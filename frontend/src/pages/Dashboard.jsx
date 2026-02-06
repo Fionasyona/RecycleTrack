@@ -1,23 +1,18 @@
-import React, { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
-import { centerAPI, api } from "../services/api";
-import toast from "react-hot-toast";
 import {
-  MapPin,
-  Trophy,
-  ArrowRight,
-  Crown,
-  Medal,
-  User,
-  Truck,
-  Clock,
-  CheckCircle,
-  History,
   Calendar,
   CalendarClock,
+  CheckCircle,
+  Clock,
   CreditCard,
+  History,
+  MapPin,
+  Trophy,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { api, centerAPI } from "../services/api";
 
 const Dashboard = () => {
   const { user: currentUser } = useAuth();
@@ -26,30 +21,17 @@ const Dashboard = () => {
     currentUser || { points: 0, badge: "Newcomer", full_name: "Resident" },
   );
   const [centerCount, setCenterCount] = useState(0);
-  const [leaders, setLeaders] = useState([]);
   const [activity, setActivity] = useState({ pending: [], history: [] });
   const [loading, setLoading] = useState(true);
 
-  // --- PAYMENT HANDLER ---
-  const handlePayment = async (pickupId) => {
-    if (!window.confirm("Pay KES 100 for waste collection service?")) return;
-
-    const toastId = toast.loading("Processing M-Pesa payment...");
-    try {
-      await api.post("/users/payment/initiate/", {
-        pickup_id: pickupId,
-        amount: 100,
-        phone: profile.phone || currentUser.phone,
-      });
-      toast.success("Payment Received!", { id: toastId });
-
-      const historyRes = await api.get("/users/history/");
-      const historyData = historyRes.pending ? historyRes : historyRes.data;
-      setActivity(historyData || { pending: [], history: [] });
-    } catch (error) {
-      console.error(error);
-      toast.error("Payment failed. Please try again.", { id: toastId });
-    }
+  // --- HELPER FUNCTIONS ---
+  const getDisplayName = (userObj) => {
+    if (userObj.full_name && userObj.full_name.trim() !== "")
+      return userObj.full_name;
+    if (userObj.first_name)
+      return `${userObj.first_name} ${userObj.last_name || ""}`;
+    if (userObj.email) return userObj.email.split("@")[0];
+    return "Resident";
   };
 
   const getBadgeProgress = (points) => {
@@ -84,61 +66,65 @@ const Dashboard = () => {
 
   const progress = getBadgeProgress(profile.points || 0);
 
-  const getRankIcon = (index) => {
-    if (index === 0)
-      return <Crown className="w-5 h-5 text-yellow-500 fill-yellow-500" />;
-    if (index === 1)
-      return <Medal className="w-5 h-5 text-gray-400 fill-gray-400" />;
-    if (index === 2)
-      return <Medal className="w-5 h-5 text-orange-400 fill-orange-400" />;
-    return (
-      <span className="font-bold text-gray-400 text-sm">#{index + 1}</span>
-    );
-  };
-
-  // Helper: Get Display Name
-  const getDisplayName = (userObj) => {
-    if (userObj.full_name && userObj.full_name.trim() !== "")
-      return userObj.full_name;
-    if (userObj.first_name)
-      return `${userObj.first_name} ${userObj.last_name || ""}`;
-    // Fallback: Use part of email before @
-    if (userObj.email) return userObj.email.split("@")[0];
-    return "Resident";
-  };
-
   const groupPendingByBookingDate = (items) => {
     const groups = {};
-    const sorted = [...items].sort((a, b) => {
-      const dateA = new Date(a.created_at || Date.now());
-      const dateB = new Date(b.created_at || Date.now());
-      return dateB - dateA;
-    });
-
+    const sorted = [...items].sort(
+      (a, b) =>
+        new Date(b.created_at || Date.now()) -
+        new Date(a.created_at || Date.now()),
+    );
     sorted.forEach((item) => {
-      const dateObj = new Date(item.created_at || Date.now());
-      const dateStr = dateObj.toLocaleDateString("en-US", {
+      const dateStr = new Date(
+        item.created_at || Date.now(),
+      ).toLocaleDateString("en-US", {
         weekday: "long",
         month: "short",
         day: "numeric",
       });
-
       if (!groups[dateStr]) groups[dateStr] = [];
       groups[dateStr].push(item);
     });
     return groups;
   };
 
+  const handlePayment = async (pickupId) => {
+    if (!window.confirm("Pay KES 100 for waste collection service?")) return;
+    const toastId = toast.loading("Processing M-Pesa payment...");
+    try {
+      await api.post("/users/payment/initiate/", {
+        pickup_id: pickupId,
+        amount: 100,
+        phone: profile.phone || currentUser.phone,
+      });
+      toast.success("Payment Received!", { id: toastId });
+      fetchHistory();
+    } catch (error) {
+      toast.error("Payment failed. Please try again.", { id: toastId });
+    }
+  };
+
+  const fetchHistory = async () => {
+    try {
+      const historyRes = await api.get("/users/history/");
+      const historyData = historyRes.pending ? historyRes : historyRes.data;
+      setActivity(
+        historyData && historyData.pending
+          ? historyData
+          : { pending: [], history: [] },
+      );
+    } catch (error) {
+      console.error("Error fetching history:", error);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [centersRes, profileRes, leaderboardRes, historyRes] =
-          await Promise.all([
-            centerAPI.getAll(),
-            api.get("/users/profile/"),
-            api.get("/users/leaderboard/"),
-            api.get("/users/history/"),
-          ]);
+        const [centersRes, profileRes, historyRes] = await Promise.all([
+          centerAPI.getAll(),
+          api.get("/users/profile/"),
+          api.get("/users/history/"),
+        ]);
 
         const centers = Array.isArray(centersRes)
           ? centersRes
@@ -146,34 +132,31 @@ const Dashboard = () => {
         setCenterCount(centers.length);
         setProfile(profileRes.data || profileRes);
 
-        const leadersData = leaderboardRes.data || leaderboardRes;
-        setLeaders(Array.isArray(leadersData) ? leadersData : []);
-
         const historyData = historyRes.pending ? historyRes : historyRes.data;
-        if (historyData && historyData.pending) {
-          setActivity(historyData);
-        } else {
-          setActivity({ pending: [], history: [] });
-        }
+        setActivity(
+          historyData && historyData.pending
+            ? historyData
+            : { pending: [], history: [] },
+        );
       } catch (error) {
         console.error("Dashboard Error:", error);
       } finally {
         setLoading(false);
       }
     };
-
     fetchData();
   }, []);
 
   if (loading)
     return (
-      <div className="p-10 text-center text-gray-500">
-        Loading your dashboard...
+      <div className="flex h-screen items-center justify-center bg-gray-50 text-gray-500">
+        Loading...
       </div>
     );
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-8">
+    // REMOVED <MainLayout> WRAPPER
+    <div className="space-y-8 animate-in fade-in duration-500">
       {/* 1. HERO SECTION */}
       <div className="bg-gradient-to-r from-green-700 to-green-600 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
         <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
@@ -187,7 +170,8 @@ const Dashboard = () => {
               Hello, {getDisplayName(profile)}!
             </h1>
             <p className="text-green-50 opacity-90 mt-2">
-              You have earned <strong>{profile.points} points</strong>.
+              You have earned <strong>{profile.points} points</strong> recycling
+              with us.
             </p>
           </div>
 
@@ -200,21 +184,16 @@ const Dashboard = () => {
             </div>
             <div className="w-full bg-gray-700 h-3 rounded-full overflow-hidden">
               <div
-                className="bg-yellow-400 h-full rounded-full transition-all duration-1000 ease-out"
+                className="bg-yellow-400 h-full rounded-full transition-all duration-1000"
                 style={{ width: `${progress.percent}%` }}
               ></div>
             </div>
-            <p className="text-xs text-green-200 mt-2 text-center">
-              {progress.target - profile.points > 0
-                ? `${Math.ceil((progress.target - profile.points) / 20)} more recycles to level up!`
-                : "You are at the top level!"}
-            </p>
           </div>
         </div>
       </div>
 
-      {/* 2. STATS & ACTIONS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* 2. STATS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
           <div className="bg-yellow-100 p-3 rounded-full text-yellow-600">
             <Trophy className="w-6 h-6" />
@@ -227,46 +206,27 @@ const Dashboard = () => {
 
         <Link
           to="/maps"
-          className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 hover:shadow-md hover:bg-gray-50 transition-all cursor-pointer group"
+          className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 hover:shadow-md transition group"
         >
-          <div className="bg-blue-100 p-3 rounded-full text-blue-600 group-hover:bg-blue-200 transition-colors">
+          <div className="bg-blue-100 p-3 rounded-full text-blue-600 group-hover:bg-blue-200">
             <MapPin className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">
+            <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600">
               Active Centers
             </p>
             <p className="text-2xl font-bold text-gray-900">{centerCount}</p>
           </div>
         </Link>
-
-        <Link
-          to="/book-pickup"
-          className="bg-green-600 p-6 rounded-xl shadow-md flex items-center justify-between gap-4 text-white hover:bg-green-700 hover:shadow-lg transition cursor-pointer group"
-        >
-          <div className="flex items-center gap-4">
-            <div className="bg-white/20 p-3 rounded-full text-white">
-              <Truck className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-green-100">
-                Ready to Recycle?
-              </p>
-              <p className="text-xl font-bold">Book Pickup</p>
-            </div>
-          </div>
-          <ArrowRight className="w-5 h-5 opacity-70 group-hover:translate-x-1 transition-transform" />
-        </Link>
       </div>
 
-      {/* 3. MY ACTIVITY SECTION */}
+      {/* 3. LISTS (Requests & History) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Pending Requests */}
+        {/* Pickup Requests */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
             <Clock className="w-5 h-5 text-orange-500" /> Pickup Requests
           </h2>
-
           {activity.pending && activity.pending.length > 0 ? (
             <div className="space-y-6">
               {Object.entries(groupPendingByBookingDate(activity.pending)).map(
@@ -278,12 +238,15 @@ const Dashboard = () => {
                         Booked on: {dateLabel}
                       </span>
                     </div>
-
                     <div className="space-y-3">
                       {groupReqs.map((req) => (
                         <div
                           key={req.id}
-                          className={`p-3 border rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${req.status === "cancelled" ? "bg-red-50 border-red-100" : "bg-orange-50 border-orange-100"}`}
+                          className={`p-3 border rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${
+                            req.status === "cancelled"
+                              ? "bg-red-50 border-red-100"
+                              : "bg-orange-50 border-orange-100"
+                          }`}
                         >
                           <div>
                             <p className="font-bold text-sm text-gray-800">
@@ -300,13 +263,7 @@ const Dashboard = () => {
                                 </b>
                               </span>
                             </div>
-                            {req.status === "cancelled" && (
-                              <p className="text-xs text-red-600 font-bold mt-1">
-                                ⚠️ {req.rejection_reason || "Request declined"}
-                              </p>
-                            )}
                           </div>
-
                           <div className="flex items-center gap-2 self-end sm:self-center">
                             {req.payment_status === "Paid" ? (
                               <span className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm">
@@ -316,14 +273,18 @@ const Dashboard = () => {
                               req.status === "pending" && (
                                 <button
                                   onClick={() => handlePayment(req.id)}
-                                  className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-700 transition shadow-sm animate-pulse"
+                                  className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-700 animate-pulse transition"
                                 >
                                   <CreditCard size={12} /> Pay KES 100
                                 </button>
                               )
                             )}
                             <span
-                              className={`text-xs font-bold px-2 py-1 rounded border capitalize ${req.status === "cancelled" ? "bg-white text-red-600 border-red-200" : req.status === "assigned" ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-orange-600 border-orange-200"}`}
+                              className={`text-xs font-bold px-2 py-1 rounded border capitalize ${
+                                req.status === "cancelled"
+                                  ? "bg-white text-red-600 border-red-200"
+                                  : "bg-white text-orange-600 border-orange-200"
+                              }`}
                             >
                               {req.status === "cancelled"
                                 ? "Rejected"
@@ -347,10 +308,9 @@ const Dashboard = () => {
           <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
             <History className="w-5 h-5 text-blue-500" /> Recent History
           </h2>
-
           {activity.history && activity.history.length > 0 ? (
             <div className="space-y-3">
-              {activity.history.slice(0, 3).map((log) => (
+              {activity.history.slice(0, 5).map((log) => (
                 <div
                   key={log.id}
                   className="p-3 bg-gray-50 border border-gray-100 rounded-lg flex justify-between items-center"
@@ -376,61 +336,6 @@ const Dashboard = () => {
             <p className="text-sm text-gray-400 italic">
               No recycling history yet.
             </p>
-          )}
-        </div>
-      </div>
-
-      {/* 4. LEADERBOARD SECTION */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-yellow-500" /> Community Leaderboard
-          </h2>
-          <span className="text-xs font-semibold text-green-600 bg-green-100 px-3 py-1 rounded-full">
-            Top 20 Heroes
-          </span>
-        </div>
-
-        <div className="divide-y divide-gray-100">
-          {Array.isArray(leaders) && leaders.length > 0 ? (
-            leaders.map((player, index) => (
-              <div
-                key={player.id || index}
-                className={`flex items-center justify-between p-4 hover:bg-gray-50 transition ${currentUser?.email === player.email ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-8 flex justify-center">
-                    {getRankIcon(index)}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-gray-400" : index === 2 ? "bg-orange-400" : "bg-green-600"}`}
-                    >
-                      {getDisplayName(player)[0].toUpperCase()}
-                    </div>
-                    <div>
-                      {/* --- FIX: USE DISPLAY NAME FUNCTION --- */}
-                      <p
-                        className={`text-sm font-bold ${currentUser?.email === player.email ? "text-green-800" : "text-gray-800"}`}
-                      >
-                        {getDisplayName(player)}
-                        {currentUser?.email === player.email && " (You)"}
-                      </p>
-                      {/* -------------------------------------- */}
-                      <p className="text-xs text-gray-400">{player.badge}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="font-bold text-gray-700">
-                  {player.points}{" "}
-                  <span className="text-xs font-normal text-gray-400">pts</span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="p-8 text-center text-gray-500">
-              No leaderboard data available yet.
-            </div>
           )}
         </div>
       </div>

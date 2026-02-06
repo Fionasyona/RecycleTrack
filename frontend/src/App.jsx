@@ -7,7 +7,6 @@ import AdminLayout from "./components/layouts/AdminLayout";
 import MainLayout from "./components/layouts/MainLayout";
 
 // --- Guards ---
-// WE USE THE NEW ROLE GUARD NOW
 import RoleGuard from "./components/auth/RoleGuard";
 
 // --- Pages: Public & User ---
@@ -26,39 +25,45 @@ import AdminDashboard from "./pages/AdminDashboard";
 import UsersManagement from "./pages/UsersManagement";
 import ManageCenters from "./pages/admin/ManageCenters";
 import AdminArticles from "./pages/admin/AdminArticles";
+import CollectorsManagement from "./pages/CollectorsManagement";
 
 //--- Pages: Collector ---
 import CollectorDashboard from "./pages/CollectorDashboard";
-import CollectorsManagement from "./pages/CollectorsManagement";
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+
           {/* =======================================================
-              SECTION 1: PUBLIC ROUTES
-             ======================================================= */}
+              SECTION 1: PUBLIC ROUTES (No Auth Required)
+              ======================================================= */}
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          
+          {/* =======================================================
+              SECTION 1: PUBLIC ROUTES (Wrapped in MainLayout)
+              ======================================================= */}
           <Route element={<MainLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            
             <Route path="/education" element={<Education />} />
             <Route path="/education/:id" element={<ArticleDetail />} />
           </Route>
 
           {/* =======================================================
-              SECTION 2: RESIDENT / USER ROUTES
+              SECTION 2: RESIDENT / USER ROUTES (Protected + MainLayout)
               Allowed: "resident", "admin", "service_provider"
-             ======================================================= */}
-          <Route element={<MainLayout />}>
-            <Route
-              element={
-                <RoleGuard
-                  allowedRoles={["resident", "admin", "service_provider"]}
-                />
-              }
-            >
+              ======================================================= */}
+          <Route
+            element={
+              <RoleGuard
+                allowedRoles={["resident", "admin", "service_provider"]}
+              />
+            }
+          >
+            <Route element={<MainLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/maps" element={<MapView />} />
               <Route path="/profile" element={<Profile />} />
@@ -69,17 +74,16 @@ function App() {
           {/* =======================================================
               SECTION 3: COLLECTOR (DRIVER) PORTAL
               Allowed: ONLY "service_provider"
-             ======================================================= */}
+              Note: CollectorDashboard has its own internal Sidebar/Layout
+              ======================================================= */}
           <Route element={<RoleGuard allowedRoles={["service_provider"]} />}>
-            {/* Note: You can create a CollectorLayout if you want a specific sidebar for them */}
             <Route path="/driver/dashboard" element={<CollectorDashboard />} />
-            {/* Add other driver routes here, e.g., /driver/pickups */}
           </Route>
 
           {/* =======================================================
               SECTION 4: ADMIN PORTAL
               Allowed: ONLY "admin"
-             ======================================================= */}
+              ======================================================= */}
           <Route path="/admin" element={<RoleGuard allowedRoles={["admin"]} />}>
             <Route element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />
@@ -92,7 +96,7 @@ function App() {
 
           {/* =======================================================
               SECTION 5: CATCH-ALL (404)
-             ======================================================= */}
+              ======================================================= */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
