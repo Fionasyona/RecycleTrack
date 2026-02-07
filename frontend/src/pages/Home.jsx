@@ -8,6 +8,7 @@ import {
   Users,
   TrendingUp,
   ArrowRight,
+  CheckCircle,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -19,29 +20,29 @@ const Home = () => {
       icon: Trophy,
       title: "Gamified Rewards",
       description:
-        "Earn points and badges for proper waste disposal and recycling activities",
-      color: "bg-yellow-50 text-yellow-600",
+        "Earn points and badges for proper waste disposal and recycling activities.",
+      color: "bg-yellow-100 text-yellow-700",
     },
     {
       icon: Map,
       title: "Find Recyclers",
       description:
-        "Locate nearby waste collectors and recycling centers with our interactive map",
-      color: "bg-blue-50 text-blue-600",
+        "Locate nearby waste collectors and recycling centers with our interactive map.",
+      color: "bg-blue-100 text-blue-700",
     },
     {
       icon: BookOpen,
       title: "Learn & Grow",
       description:
-        "Access educational resources and tips on sustainable waste management",
-      color: "bg-green-50 text-green-600",
+        "Access educational resources and tips on sustainable waste management.",
+      color: "bg-green-100 text-green-700",
     },
     {
       icon: Users,
       title: "Community Impact",
       description:
-        "Join a community of eco-conscious citizens making a real difference",
-      color: "bg-purple-50 text-purple-600",
+        "Join a community of eco-conscious citizens making a real difference.",
+      color: "bg-purple-100 text-purple-700",
     },
   ];
 
@@ -53,26 +54,41 @@ const Home = () => {
   ];
 
   return (
-    <div className="min-h-screen">
-      {/* Hero Section */}
-      <section className="bg-gradient-to-br from-green-500 via-green-600 to-blue-600 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28">
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-white/20 backdrop-blur-sm rounded-3xl mb-6">
-              <Leaf className="w-12 h-12" />
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
+      {/* --- HERO SECTION --- */}
+      <section className="relative bg-green-900 text-white overflow-hidden">
+        {/* Background Image with Overlay */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src="https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?q=80&w=2070&auto=format&fit=crop"
+            alt="Recycling Plant"
+            className="w-full h-full object-cover opacity-40"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-green-900/90 to-green-800/80"></div>
+        </div>
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32 lg:py-40">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-4 py-2 rounded-full text-green-100 text-sm font-semibold mb-6 border border-white/20">
+              <Leaf size={16} className="text-green-400" />
+              <span>Sustainable Waste Management Solution</span>
             </div>
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              Transform Waste Into Rewards
+            <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight leading-tight mb-6">
+              Track Waste. <br />
+              <span className="text-green-400">Earn Rewards.</span> <br />
+              Save the Planet.
             </h1>
-            <p className="text-xl md:text-2xl text-green-50 mb-8 max-w-3xl mx-auto">
-              Join RecycleTrack and turn your eco-friendly actions into points,
-              badges, and real environmental impact
+            <p className="text-lg md:text-xl text-gray-200 mb-8 max-w-2xl leading-relaxed">
+              RecycleTrack connects you with local recyclers, rewards your green
+              habits, and helps you track your environmental footprint—all in
+              one app.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+
+            <div className="flex flex-col sm:flex-row gap-4">
               {user ? (
                 <Link
                   to="/dashboard"
-                  className="inline-flex items-center justify-center gap-2 bg-white text-green-600 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-green-50 transition-all shadow-lg hover:shadow-xl"
+                  className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-400 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-green-500/30 hover:-translate-y-1"
                 >
                   Go to Dashboard
                   <ArrowRight size={20} />
@@ -81,17 +97,17 @@ const Home = () => {
                 <>
                   <Link
                     to="/register"
-                    className="inline-flex items-center justify-center gap-2 bg-white text-green-600 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-green-50 transition-all shadow-lg hover:shadow-xl"
+                    className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-400 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-green-500/30 hover:-translate-y-1"
                   >
                     Get Started Free
                     <ArrowRight size={20} />
                   </Link>
                   <Link
                     to="/map"
-                    className="inline-flex items-center justify-center gap-2 bg-white/10 backdrop-blur-sm border-2 border-white text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-white/20 transition-all"
+                    className="inline-flex items-center justify-center gap-2 bg-white/10 backdrop-blur-md border border-white/30 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-white/20 transition-all"
                   >
                     <Map size={20} />
-                    Explore Map
+                    Find Centers
                   </Link>
                 </>
               )}
@@ -100,32 +116,37 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="py-12 bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+      {/* --- STATS SECTION --- */}
+      <section className="relative -mt-10 z-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 p-8 md:p-12">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 divide-x divide-gray-100">
             {stats.map((stat, index) => (
-              <div key={index} className="text-center">
-                <div className="text-3xl md:text-4xl font-bold text-primary-600 mb-2">
+              <div key={index} className="text-center px-4 first:pl-0">
+                <div className="text-3xl md:text-4xl font-extrabold text-green-600 mb-1">
                   {stat.value}
                 </div>
-                <div className="text-gray-600 font-medium">{stat.label}</div>
+                <div className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                  {stat.label}
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="py-20 bg-gray-50">
+      {/* --- FEATURES SECTION --- */}
+      <section className="py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Why Choose RecycleTrack?
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <h2 className="text-base font-semibold text-green-600 uppercase tracking-wider mb-2">
+              Features
             </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Everything you need to make waste management engaging, effective,
-              and rewarding
+            <h3 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Everything You Need to Go Green
+            </h3>
+            <p className="text-xl text-gray-600">
+              We make recycling simple, transparent, and rewarding for everyone
+              involved.
             </p>
           </div>
 
@@ -135,17 +156,19 @@ const Home = () => {
               return (
                 <div
                   key={index}
-                  className="bg-white rounded-2xl p-6 shadow-md hover:shadow-xl transition-all hover:-translate-y-1"
+                  className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-2 group"
                 >
                   <div
-                    className={`w-12 h-12 rounded-xl ${feature.color} flex items-center justify-center mb-4`}
+                    className={`w-14 h-14 rounded-2xl ${feature.color} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}
                   >
-                    <Icon size={24} />
+                    <Icon size={28} />
                   </div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  <h4 className="text-xl font-bold text-gray-900 mb-3">
                     {feature.title}
-                  </h3>
-                  <p className="text-gray-600">{feature.description}</p>
+                  </h4>
+                  <p className="text-gray-600 leading-relaxed">
+                    {feature.description}
+                  </p>
                 </div>
               );
             })}
@@ -153,114 +176,123 @@ const Home = () => {
         </div>
       </section>
 
-      {/* How It Works Section */}
+      {/* --- IMAGE & CONTENT SECTION --- */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              How It Works
-            </h2>
-            <p className="text-xl text-gray-600">
-              Simple steps to start making a difference
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
-                1
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Sign Up
-              </h3>
-              <p className="text-gray-600">
-                Create your free account and set up your profile
-              </p>
+          <div className="flex flex-col lg:flex-row items-center gap-16">
+            <div className="lg:w-1/2 relative">
+              <div className="absolute -top-4 -left-4 w-24 h-24 bg-green-100 rounded-full z-0"></div>
+              <div className="absolute -bottom-4 -right-4 w-32 h-32 bg-blue-100 rounded-full z-0"></div>
+              <img
+                src="https://images.unsplash.com/photo-1595278069441-2cf29f8005a4?q=80&w=2071&auto=format&fit=crop"
+                alt="Recycling App on Phone"
+                className="relative z-10 rounded-2xl shadow-2xl w-full object-cover h-[500px]"
+              />
             </div>
-
-            <div className="text-center">
-              <div className="w-16 h-16 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
-                2
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Take Action
+            <div className="lg:w-1/2">
+              <h3 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">
+                Smart Waste Management at Your Fingertips
               </h3>
-              <p className="text-gray-600">
-                Dispose waste properly and report your recycling activities
+              <p className="text-lg text-gray-600 mb-8 leading-relaxed">
+                Gone are the days of confusing recycling schedules. With
+                RecycleTrack, you can book pickups, verify disposal, and track
+                your environmental impact in real-time.
               </p>
-            </div>
 
-            <div className="text-center">
-              <div className="w-16 h-16 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
-                3
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Earn Rewards
-              </h3>
-              <p className="text-gray-600">
-                Collect points, unlock badges, and climb the leaderboard
-              </p>
+              <ul className="space-y-4 mb-8">
+                {[
+                  "Real-time tracking of waste collection",
+                  "Instant digital payments via M-Pesa",
+                  "Verified impact reports for businesses",
+                  "Leaderboards to compete with neighbors",
+                ].map((item, i) => (
+                  <li key={i} className="flex items-center gap-3">
+                    <CheckCircle className="text-green-500 w-5 h-5 flex-shrink-0" />
+                    <span className="text-gray-700 font-medium">{item}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                to="/about"
+                className="text-green-600 font-bold hover:text-green-700 inline-flex items-center gap-1"
+              >
+                Learn more about our mission <ArrowRight size={18} />
+              </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-br from-primary-600 to-green-700 text-white">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <TrendingUp className="w-16 h-16 mx-auto mb-6" />
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
+      {/* --- CTA SECTION --- */}
+      <section className="py-24 bg-gray-900 relative overflow-hidden">
+        {/* Decorative elements */}
+        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-green-900/20 to-transparent"></div>
+
+        <div className="relative z-10 max-w-4xl mx-auto px-4 text-center">
+          <TrendingUp className="w-16 h-16 text-green-400 mx-auto mb-6" />
+          <h2 className="text-3xl md:text-5xl font-bold text-white mb-6">
             Ready to Make an Impact?
           </h2>
-          <p className="text-xl text-green-50 mb-8">
+          <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
             Join thousands of users who are already making a difference in waste
-            management
+            management. Start your journey towards a cleaner planet today.
           </p>
           {!user && (
             <Link
               to="/register"
-              className="inline-flex items-center justify-center gap-2 bg-white text-primary-600 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-green-50 transition-all shadow-lg hover:shadow-xl"
+              className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-400 text-white px-10 py-5 rounded-full font-bold text-lg transition-all shadow-lg hover:shadow-green-500/40 hover:-translate-y-1"
             >
-              Start Your Journey Today
+              Start Your Journey
               <ArrowRight size={20} />
             </Link>
           )}
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="bg-gray-900 text-gray-400 py-12">
+      {/* --- FOOTER --- */}
+      <footer className="bg-gray-950 text-gray-400 py-16 border-t border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="bg-primary-600 p-2 rounded-lg">
-                  <Leaf className="w-5 h-5 text-white" />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
+            <div className="col-span-1 md:col-span-1">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="bg-green-600 p-2 rounded-lg">
+                  <Leaf className="w-6 h-6 text-white" />
                 </div>
-                <span className="text-white font-bold text-lg">
+                <span className="text-white font-bold text-xl">
                   RecycleTrack
                 </span>
               </div>
-              <p className="text-sm">
-                Making waste management engaging and rewarding for everyone.
+              <p className="text-sm leading-relaxed mb-6">
+                Empowering communities to manage waste efficiently through
+                technology and gamification.
               </p>
             </div>
 
             <div>
-              <h3 className="text-white font-semibold mb-4">Product</h3>
-              <ul className="space-y-2 text-sm">
+              <h3 className="text-white font-semibold mb-6">Platform</h3>
+              <ul className="space-y-3 text-sm">
                 <li>
-                  <Link to="/map" className="hover:text-white">
+                  <Link
+                    to="/map"
+                    className="hover:text-green-400 transition-colors"
+                  >
                     Find Recyclers
                   </Link>
                 </li>
                 <li>
-                  <Link to="/education" className="hover:text-white">
+                  <Link
+                    to="/education"
+                    className="hover:text-green-400 transition-colors"
+                  >
                     Resources
                   </Link>
                 </li>
                 <li>
-                  <Link to="/dashboard" className="hover:text-white">
+                  <Link
+                    to="/dashboard"
+                    className="hover:text-green-400 transition-colors"
+                  >
                     Dashboard
                   </Link>
                 </li>
@@ -268,20 +300,29 @@ const Home = () => {
             </div>
 
             <div>
-              <h3 className="text-white font-semibold mb-4">Company</h3>
-              <ul className="space-y-2 text-sm">
+              <h3 className="text-white font-semibold mb-6">Company</h3>
+              <ul className="space-y-3 text-sm">
                 <li>
-                  <Link to="/about" className="hover:text-white">
+                  <Link
+                    to="/about"
+                    className="hover:text-green-400 transition-colors"
+                  >
                     About Us
                   </Link>
                 </li>
                 <li>
-                  <Link to="/contact" className="hover:text-white">
+                  <Link
+                    to="/contact"
+                    className="hover:text-green-400 transition-colors"
+                  >
                     Contact
                   </Link>
                 </li>
                 <li>
-                  <Link to="/privacy" className="hover:text-white">
+                  <Link
+                    to="/privacy"
+                    className="hover:text-green-400 transition-colors"
+                  >
                     Privacy Policy
                   </Link>
                 </li>
@@ -289,15 +330,28 @@ const Home = () => {
             </div>
 
             <div>
-              <h3 className="text-white font-semibold mb-4">Connect</h3>
+              <h3 className="text-white font-semibold mb-6">Stay Connected</h3>
               <p className="text-sm mb-4">
-                Join our community and stay updated with the latest news.
+                Subscribe to our newsletter for the latest eco-tips.
               </p>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  placeholder="Enter your email"
+                  className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg block w-full p-2.5 focus:ring-green-500 focus:border-green-500"
+                />
+                <button className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                  Join
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="border-t border-gray-800 mt-8 pt-8 text-sm text-center">
-            <p>&copy; 2025 Recycle Track. All rights reserved.</p>
+          <div className="border-t border-gray-800 mt-12 pt-8 text-sm text-center text-gray-500">
+            <p>
+              &copy; {new Date().getFullYear()} RecycleTrack. All rights
+              reserved.
+            </p>
           </div>
         </div>
       </footer>

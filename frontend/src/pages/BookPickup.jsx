@@ -7,7 +7,6 @@ import {
   Calendar,
   Recycle,
   MapPin,
-  Package,
   Loader,
   ArrowLeft,
   Navigation,
@@ -25,7 +24,7 @@ const BookPickup = () => {
   const [formData, setFormData] = useState({
     waste_type: "Plastic",
     center_name: "",
-    quantity: "",
+    // quantity removed - Driver will enter this
     scheduled_date: "",
     pickup_address: "",
     region: "",
@@ -33,7 +32,6 @@ const BookPickup = () => {
     longitude: null,
   });
 
-  // [Keep your existing useEffects for fetchCenters, Filtering, and Update Preview Card here]
   useEffect(() => {
     const fetchCenters = async () => {
       try {
@@ -81,7 +79,6 @@ const BookPickup = () => {
     }
   }, [formData.center_name, allCenters]);
 
-  // [Keep your handleGetLocation, fetchAddressFromCoords, and handleChange functions here]
   const handleGetLocation = () => {
     if (!navigator.geolocation)
       return toast.error("Geolocation not supported.");
@@ -128,7 +125,11 @@ const BookPickup = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.post("/users/pickup/create/", formData);
+      // Send "Pending" for quantity since driver updates it
+      await api.post("/users/pickup/create/", {
+        ...formData,
+        quantity: "Pending Weighing",
+      });
       toast.success("Pickup Request Sent!");
       navigate("/dashboard");
     } catch (error) {
@@ -141,7 +142,6 @@ const BookPickup = () => {
   return (
     <div className="min-h-screen bg-gray-50 lg:py-6 py-4 px-4">
       <div className="max-w-5xl mx-auto">
-        {/* Compact Back Button */}
         <button
           onClick={() => navigate("/dashboard")}
           className="flex items-center text-sm font-medium text-gray-500 hover:text-green-700 mb-4 transition-colors"
@@ -150,14 +150,14 @@ const BookPickup = () => {
         </button>
 
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
-          {/* SLIMMER HEADER */}
           <div className="bg-green-700 md:px-8 px-6 py-6 text-white">
             <div className="flex items-center gap-3">
               <Truck className="w-7 h-7" />
               <div>
                 <h1 className="text-2xl font-bold">Book a Pickup</h1>
                 <p className="text-green-100 text-xs opacity-90">
-                  Quickly schedule a waste collection.
+                  Quickly schedule a waste collection. Driver will weigh upon
+                  arrival.
                 </p>
               </div>
             </div>
@@ -171,7 +171,7 @@ const BookPickup = () => {
                   1. Waste Details
                 </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-700 flex items-center gap-2">
                       <Recycle className="w-3.5 h-3.5 text-green-600" /> Waste
@@ -188,21 +188,6 @@ const BookPickup = () => {
                       <option value="Paper">Paper</option>
                       <option value="Metal">Metal</option>
                     </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-700 flex items-center gap-2">
-                      <Package className="w-3.5 h-3.5 text-green-600" />{" "}
-                      Quantity
-                    </label>
-                    <input
-                      type="text"
-                      name="quantity"
-                      placeholder="e.g. 5kg"
-                      className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 text-sm outline-none focus:ring-2 focus:ring-green-500"
-                      value={formData.quantity}
-                      onChange={handleChange}
-                    />
                   </div>
                 </div>
 
@@ -226,7 +211,6 @@ const BookPickup = () => {
                   </select>
                 </div>
 
-                {/* SLIM PREVIEW CARD */}
                 {selectedCenterData && (
                   <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-3 flex items-center gap-3">
                     <img
@@ -277,7 +261,11 @@ const BookPickup = () => {
                   <button
                     type="button"
                     onClick={handleGetLocation}
-                    className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${formData.latitude ? "bg-green-100 text-green-700 border border-green-200" : "bg-blue-600 text-white shadow-md hover:bg-blue-700"}`}
+                    className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                      formData.latitude
+                        ? "bg-green-100 text-green-700 border border-green-200"
+                        : "bg-blue-600 text-white shadow-md hover:bg-blue-700"
+                    }`}
                   >
                     {geoLoading ? (
                       <Loader className="animate-spin" size={14} />
@@ -307,12 +295,15 @@ const BookPickup = () => {
               </div>
             </div>
 
-            {/* FULL WIDTH ACTION */}
             <div className="pt-4">
               <button
                 type="submit"
                 disabled={loading}
-                className={`w-full py-4 rounded-2xl font-bold text-white text-lg shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2 ${loading ? "bg-gray-400" : "bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"}`}
+                className={`w-full py-4 rounded-2xl font-bold text-white text-lg shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2 ${
+                  loading
+                    ? "bg-gray-400"
+                    : "bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
+                }`}
               >
                 {loading ? <Loader className="animate-spin" /> : <Truck />}
                 {loading ? "Processing..." : "Confirm Pickup Request"}

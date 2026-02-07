@@ -7,6 +7,10 @@ import {
   History,
   MapPin,
   Trophy,
+  Crown,
+  Medal,
+  Scale,
+  AlertCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -21,6 +25,7 @@ const Dashboard = () => {
     currentUser || { points: 0, badge: "Newcomer", full_name: "Resident" },
   );
   const [centerCount, setCenterCount] = useState(0);
+  const [leaders, setLeaders] = useState([]);
   const [activity, setActivity] = useState({ pending: [], history: [] });
   const [loading, setLoading] = useState(true);
 
@@ -66,6 +71,18 @@ const Dashboard = () => {
 
   const progress = getBadgeProgress(profile.points || 0);
 
+  const getRankIcon = (index) => {
+    if (index === 0)
+      return <Crown className="w-5 h-5 text-yellow-500 fill-yellow-500" />;
+    if (index === 1)
+      return <Medal className="w-5 h-5 text-gray-400 fill-gray-400" />;
+    if (index === 2)
+      return <Medal className="w-5 h-5 text-orange-400 fill-orange-400" />;
+    return (
+      <span className="font-bold text-gray-400 text-sm">#{index + 1}</span>
+    );
+  };
+
   const groupPendingByBookingDate = (items) => {
     const groups = {};
     const sorted = [...items].sort(
@@ -87,19 +104,23 @@ const Dashboard = () => {
     return groups;
   };
 
-  const handlePayment = async (pickupId) => {
-    if (!window.confirm("Pay KES 100 for waste collection service?")) return;
+  const handlePayment = async (pickupId, amount) => {
+    const safeAmount = amount || 0;
+    if (!window.confirm(`Pay KES ${safeAmount} for waste collection service?`))
+      return;
+
     const toastId = toast.loading("Processing M-Pesa payment...");
     try {
       await api.post("/users/payment/initiate/", {
         pickup_id: pickupId,
-        amount: 100,
         phone: profile.phone || currentUser.phone,
       });
       toast.success("Payment Received!", { id: toastId });
-      fetchHistory();
+      fetchHistory(); // Refresh UI immediately
     } catch (error) {
-      toast.error("Payment failed. Please try again.", { id: toastId });
+      toast.error(error.response?.data?.error || "Payment failed.", {
+        id: toastId,
+      });
     }
   };
 
@@ -120,17 +141,24 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [centersRes, profileRes, historyRes] = await Promise.all([
-          centerAPI.getAll(),
-          api.get("/users/profile/"),
-          api.get("/users/history/"),
-        ]);
+        const [centersRes, profileRes, leaderboardRes, historyRes] =
+          await Promise.all([
+            centerAPI.getAll(),
+            api.get("/users/profile/"),
+            api.get("/users/leaderboard/"),
+            api.get("/users/history/"),
+          ]);
 
         const centers = Array.isArray(centersRes)
           ? centersRes
           : centersRes.results || [];
         setCenterCount(centers.length);
         setProfile(profileRes.data || profileRes);
+        setLeaders(
+          Array.isArray(leaderboardRes.data)
+            ? leaderboardRes.data
+            : leaderboardRes,
+        );
 
         const historyData = historyRes.pending ? historyRes : historyRes.data;
         setActivity(
@@ -155,11 +183,11 @@ const Dashboard = () => {
     );
 
   return (
-    // REMOVED <MainLayout> WRAPPER
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mr-auto">
       {/* 1. HERO SECTION */}
+      {/* FIX: Removed 'z-10' from the inner div so it stays BEHIND the notifications */}
       <div className="bg-gradient-to-r from-green-700 to-green-600 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="relative flex flex-col md:flex-row justify-between items-center gap-6">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <span className="bg-yellow-400 text-green-900 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">
@@ -220,17 +248,71 @@ const Dashboard = () => {
         </Link>
       </div>
 
-      {/* 3. LISTS (Requests & History) */}
+      {/* 3. MAIN DASHBOARD CONTENT */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Pickup Requests */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <Clock className="w-5 h-5 text-orange-500" /> Pickup Requests
-          </h2>
-          {activity.pending && activity.pending.length > 0 ? (
-            <div className="space-y-6">
-              {Object.entries(groupPendingByBookingDate(activity.pending)).map(
-                ([dateLabel, groupReqs]) => (
+        {/* --- LEFT COLUMN: LEADERBOARD --- */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-fit">
+          <div className="p-6 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-yellow-500" /> Top Recyclers
+            </h2>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {Array.isArray(leaders) && leaders.length > 0 ? (
+              leaders.slice(0, 5).map((player, index) => (
+                <div
+                  key={player.id || index}
+                  className={`flex items-center justify-between p-4 ${currentUser?.email === player.email ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-8 flex justify-center">
+                      {getRankIcon(index)}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-gray-400" : "bg-green-600"}`}
+                      >
+                        {getDisplayName(player)[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <p
+                          className={`text-sm font-bold ${currentUser?.email === player.email ? "text-green-800" : "text-gray-800"}`}
+                        >
+                          {getDisplayName(player)}{" "}
+                          {currentUser?.email === player.email && "(You)"}
+                        </p>
+                        <p className="text-xs text-gray-400">{player.badge}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="font-bold text-gray-700">
+                    {player.points}{" "}
+                    <span className="text-xs font-normal text-gray-400">
+                      pts
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-8 text-center text-gray-500 italic">
+                Leaderboard loading...
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* --- RIGHT COLUMN: REQUESTS & HISTORY --- */}
+        <div className="space-y-8">
+          {/* Pickup Requests */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
+              <Clock className="w-5 h-5 text-orange-500" /> Pickup Requests
+            </h2>
+            {activity.pending && activity.pending.length > 0 ? (
+              <div className="space-y-6">
+                {Object.entries(
+                  groupPendingByBookingDate(activity.pending),
+                ).map(([dateLabel, groupReqs]) => (
                   <div key={dateLabel}>
                     <div className="flex items-center gap-2 mb-2">
                       <CalendarClock size={14} className="text-orange-400" />
@@ -239,104 +321,128 @@ const Dashboard = () => {
                       </span>
                     </div>
                     <div className="space-y-3">
-                      {groupReqs.map((req) => (
-                        <div
-                          key={req.id}
-                          className={`p-3 border rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${
-                            req.status === "cancelled"
-                              ? "bg-red-50 border-red-100"
-                              : "bg-orange-50 border-orange-100"
-                          }`}
-                        >
-                          <div>
-                            <p className="font-bold text-sm text-gray-800">
-                              {req.waste_type} ({req.quantity})
-                            </p>
-                            <div className="flex items-center gap-1.5 text-xs text-gray-600 mt-1.5">
-                              <Calendar size={12} className="text-green-600" />
-                              <span>
-                                Scheduled:{" "}
-                                <b>
-                                  {new Date(
-                                    req.scheduled_date,
-                                  ).toLocaleDateString()}
-                                </b>
-                              </span>
+                      {groupReqs.map((req) => {
+                        const isVerified =
+                          req.status === "verified" ||
+                          req.status === "paid" ||
+                          req.is_paid;
+                        const isCollected = req.status === "collected";
+                        const isCancelled = req.status === "cancelled";
+                        const hasWeight = Number(req.actual_quantity) > 0;
+                        const billAmount = Number(req.billed_amount) || 0;
+
+                        return (
+                          <div
+                            key={req.id}
+                            className={`p-3 border rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${isCancelled ? "bg-red-50 border-red-100" : "bg-orange-50 border-orange-100"}`}
+                          >
+                            <div>
+                              <p className="font-bold text-sm text-gray-800 flex items-center gap-2">
+                                {req.waste_type}
+                                {hasWeight ? (
+                                  <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded border border-green-200">
+                                    {req.actual_quantity} kg
+                                  </span>
+                                ) : (
+                                  !isCancelled && (
+                                    <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200">
+                                      Pending Weighing
+                                    </span>
+                                  )
+                                )}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-xs text-gray-600 mt-1.5">
+                                <Calendar
+                                  size={12}
+                                  className="text-green-600"
+                                />
+                                <span>
+                                  Scheduled:{" "}
+                                  <b>
+                                    {new Date(
+                                      req.scheduled_date,
+                                    ).toLocaleDateString()}
+                                  </b>
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-end sm:self-center">
+                              {isVerified ? (
+                                <span className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm">
+                                  <CheckCircle size={12} /> VERIFIED
+                                </span>
+                              ) : isCollected && !req.is_paid ? (
+                                <button
+                                  onClick={() =>
+                                    handlePayment(req.id, billAmount)
+                                  }
+                                  className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-700 animate-pulse transition shadow-sm"
+                                >
+                                  <CreditCard size={12} />
+                                  {billAmount > 0
+                                    ? `Pay KES ${billAmount}`
+                                    : "Pay Bill"}
+                                </button>
+                              ) : isCancelled ? (
+                                <span className="text-xs font-bold px-2 py-1 rounded border bg-white text-red-600 border-red-200 flex items-center gap-1">
+                                  <AlertCircle size={12} /> Rejected
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold px-2 py-1 rounded border bg-white text-orange-600 border-orange-200 flex items-center gap-1">
+                                  <Scale size={12} /> Pending
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 self-end sm:self-center">
-                            {req.payment_status === "Paid" ? (
-                              <span className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm">
-                                <CheckCircle size={12} /> PAID
-                              </span>
-                            ) : (
-                              req.status === "pending" && (
-                                <button
-                                  onClick={() => handlePayment(req.id)}
-                                  className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-700 animate-pulse transition"
-                                >
-                                  <CreditCard size={12} /> Pay KES 100
-                                </button>
-                              )
-                            )}
-                            <span
-                              className={`text-xs font-bold px-2 py-1 rounded border capitalize ${
-                                req.status === "cancelled"
-                                  ? "bg-white text-red-600 border-red-200"
-                                  : "bg-white text-orange-600 border-orange-200"
-                              }`}
-                            >
-                              {req.status === "cancelled"
-                                ? "Rejected"
-                                : req.status}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
-                ),
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400 italic">No recent requests.</p>
-          )}
-        </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">
+                No recent requests.
+              </p>
+            )}
+          </div>
 
-        {/* Recent History */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <History className="w-5 h-5 text-blue-500" /> Recent History
-          </h2>
-          {activity.history && activity.history.length > 0 ? (
-            <div className="space-y-3">
-              {activity.history.slice(0, 5).map((log) => (
-                <div
-                  key={log.id}
-                  className="p-3 bg-gray-50 border border-gray-100 rounded-lg flex justify-between items-center"
-                >
-                  <div className="flex items-center gap-3">
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    <div>
-                      <p className="font-bold text-sm text-gray-800">
-                        {log.waste_type}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {new Date(log.date).toLocaleDateString()}
-                      </p>
+          {/* Recent History */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
+              <History className="w-5 h-5 text-blue-500" /> Recent History
+            </h2>
+            {activity.history && activity.history.length > 0 ? (
+              <div className="space-y-3">
+                {activity.history.slice(0, 3).map((log) => (
+                  <div
+                    key={log.id}
+                    className="p-3 bg-gray-50 border border-gray-100 rounded-lg flex justify-between items-center"
+                  >
+                    <div className="flex items-center gap-3">
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      <div>
+                        <p className="font-bold text-sm text-gray-800">
+                          {log.waste_type}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(log.date).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
+                    <span className="text-sm font-bold text-green-600">
+                      +{log.points} pts
+                    </span>
                   </div>
-                  <span className="text-sm font-bold text-green-600">
-                    +{log.points} pts
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400 italic">
-              No recycling history yet.
-            </p>
-          )}
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">
+                No recycling history yet.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>

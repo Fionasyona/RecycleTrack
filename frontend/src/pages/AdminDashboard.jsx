@@ -1,19 +1,20 @@
 import {
   AlertTriangle,
   Archive,
-  Calendar, // <--- ADDED THIS (Was missing)
+  Calendar,
   CalendarClock,
   CheckCircle,
   Clock,
   DollarSign,
   Loader,
-  MapPin, // <--- Ensure this stays here
+  MapPin,
   Package,
   RefreshCw,
   ShieldCheck,
   Trophy,
   User,
   XCircle,
+  Scale,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -42,13 +43,14 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const reqRes = await api.get("/users/pickup/pending/");
+      const [reqRes, colRes, histRes] = await Promise.all([
+        api.get("/users/pickup/pending/"),
+        api.get("/users/admin/collectors/"),
+        api.get("/users/admin/history/"),
+      ]);
+
       setRequests(Array.isArray(reqRes) ? reqRes : reqRes.data || []);
-
-      const colRes = await api.get("/users/admin/collectors/");
       setCollectors(Array.isArray(colRes) ? colRes : colRes.data || []);
-
-      const histRes = await api.get("/users/admin/history/");
       setHistory(Array.isArray(histRes) ? histRes : histRes.data || []);
     } catch (error) {
       console.error("Failed to load dashboard data", error);
@@ -66,10 +68,12 @@ const AdminDashboard = () => {
     const toastId = toast.loading("Verifying pickup...");
     try {
       await api.post(`/users/pickup/verify/${requestId}/`);
-      toast.success("Verified! Moved to History.", { id: toastId });
+      toast.success("Verified! Driver Paid & User Awarded.", { id: toastId });
       fetchData();
     } catch (error) {
-      toast.error("Verification failed", { id: toastId });
+      toast.error(error.response?.data?.error || "Verification failed", {
+        id: toastId,
+      });
     }
   };
 
@@ -95,14 +99,6 @@ const AdminDashboard = () => {
 
   const handleAssign = async () => {
     if (!selectedCollector) return toast.error("Please select a driver");
-
-    // Warn if assigning to unpaid request
-    if (selectedRequest.payment_status !== "Paid") {
-      if (
-        !window.confirm("WARNING: This user has NOT paid yet. Assign anyway?")
-      )
-        return;
-    }
 
     try {
       await api.patch(`/users/pickup/assign/${selectedRequest.id}/`, {
@@ -135,7 +131,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Grouping Logic
   const groupRequestsByBookingDate = (items) => {
     const groups = {};
     const sorted = [...items].sort(
@@ -169,17 +164,6 @@ const AdminDashboard = () => {
             <p className="text-sm text-gray-500 mb-4">
               Select a driver for {selectedRequest.waste_type} pickup.
             </p>
-
-            {/* PAYMENT WARNING IN MODAL */}
-            {selectedRequest.payment_status === "Paid" ? (
-              <div className="bg-green-50 text-green-700 text-xs font-bold p-2 rounded mb-4 flex items-center gap-2">
-                <CheckCircle size={14} /> Payment Confirmed (Paid)
-              </div>
-            ) : (
-              <div className="bg-red-50 text-red-700 text-xs font-bold p-2 rounded mb-4 flex items-center gap-2">
-                <AlertTriangle size={14} /> Warning: Payment Pending (Unpaid)
-              </div>
-            )}
 
             <div className="space-y-2 mb-6 max-h-60 overflow-y-auto">
               {collectors.length === 0 ? (
@@ -339,22 +323,29 @@ const AdminDashboard = () => {
                                       <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">
                                         ASSIGNED
                                       </span>
+                                    ) : req.status === "collected" ? (
+                                      <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
+                                        <Scale size={10} /> WEIGHED
+                                      </span>
                                     ) : (
                                       <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded">
                                         PENDING
                                       </span>
                                     )}
 
-                                    {/* --- PAYMENT STATUS BADGE --- */}
-                                    {req.payment_status === "Paid" ? (
-                                      <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1 border border-green-200">
-                                        <DollarSign size={10} /> PAID
-                                      </span>
-                                    ) : (
-                                      <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1 border border-red-200">
-                                        <AlertTriangle size={10} /> UNPAID
-                                      </span>
-                                    )}
+                                    {/* --- PAYMENT STATUS BADGE (Only if Billed) --- */}
+                                    {req.billed_amount > 0 &&
+                                      (req.is_paid ? (
+                                        <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1 border border-green-200">
+                                          <DollarSign size={10} /> PAID:{" "}
+                                          {req.billed_amount}
+                                        </span>
+                                      ) : (
+                                        <span className="bg-yellow-100 text-yellow-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1 border border-yellow-200">
+                                          <Clock size={10} /> BILL SENT:{" "}
+                                          {req.billed_amount}
+                                        </span>
+                                      ))}
                                   </div>
                                   <span className="text-xs text-gray-400">
                                     #{req.id}
@@ -371,7 +362,9 @@ const AdminDashboard = () => {
                                       size={14}
                                       className="text-gray-400"
                                     />{" "}
-                                    {req.waste_type} ({req.quantity})
+                                    {req.waste_type}
+                                    {req.actual_quantity > 0 &&
+                                      ` (${req.actual_quantity}kg)`}
                                   </div>
                                   <div className="text-xs text-gray-500 flex items-center gap-2 col-span-2">
                                     <MapPin
@@ -381,7 +374,6 @@ const AdminDashboard = () => {
                                     {req.center_name}
                                   </div>
                                   <div className="text-xs text-gray-500 flex items-center gap-2 col-span-2">
-                                    {/* THIS WAS CAUSING THE ERROR IF IMPORT MISSING */}
                                     <Calendar
                                       size={14}
                                       className="text-gray-400"
@@ -401,16 +393,25 @@ const AdminDashboard = () => {
                                       Assign Driver
                                     </button>
                                   )}
-                                  {req.status === "collected" && (
-                                    <button
-                                      onClick={() =>
-                                        handleVerifyRequest(req.id)
-                                      }
-                                      className="flex-1 bg-green-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-green-700"
-                                    >
-                                      Verify & Complete
-                                    </button>
-                                  )}
+
+                                  {/* VERIFY BUTTON LOGIC */}
+                                  {req.status === "collected" &&
+                                    (req.is_paid ? (
+                                      <button
+                                        onClick={() =>
+                                          handleVerifyRequest(req.id)
+                                        }
+                                        className="flex-1 bg-green-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-green-700 flex items-center justify-center gap-1"
+                                      >
+                                        <CheckCircle size={14} /> Verify & Pay
+                                        Driver
+                                      </button>
+                                    ) : (
+                                      <div className="flex-1 bg-gray-100 text-gray-400 py-2 rounded-lg text-xs font-bold text-center border border-gray-200 cursor-not-allowed">
+                                        Waiting for User Payment...
+                                      </div>
+                                    ))}
+
                                   <button
                                     onClick={() => handleRejectRequest(req.id)}
                                     className="px-4 border border-red-100 text-red-600 py-2 rounded-lg text-xs font-bold hover:bg-red-50"

@@ -1,12 +1,19 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Lock, User, Phone, MapPin, Leaf, Truck } from "lucide-react";
-// 1. Remove 'register' from useAuth since it's causing the crash
-// import { useAuth } from "../context/AuthContext";
+import {
+  Mail,
+  Lock,
+  User,
+  Phone,
+  MapPin,
+  Leaf,
+  Truck,
+  ArrowLeft,
+  Check,
+} from "lucide-react";
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import toast from "react-hot-toast";
-// 2. Import your API service directly
 import { api } from "../services/api";
 
 const Register = () => {
@@ -20,13 +27,12 @@ const Register = () => {
     location: "",
     password: "",
     password2: "",
-    role: "resident", // Default role
+    role: "resident",
   });
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  // Toggle between Resident and Driver
   const toggleRole = (isDriver) => {
     setFormData((prev) => ({
       ...prev,
@@ -37,32 +43,23 @@ const Register = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }));
-    }
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
   const validate = () => {
     const newErrors = {};
-    if (!formData.first_name) newErrors.first_name = "First name is required";
-    if (!formData.last_name) newErrors.last_name = "Last name is required";
-    if (!formData.email) {
-      newErrors.email = "Email is required";
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = "Email is invalid";
-    }
-    if (!formData.phone) newErrors.phone = "Phone number is required";
-    if (!formData.location) newErrors.location = "Location is required";
-    if (!formData.password) {
-      newErrors.password = "Password is required";
-    } else if (formData.password.length < 8) {
-      newErrors.password = "Password must be at least 8 characters";
-    }
-    if (!formData.password2) {
-      newErrors.password2 = "Please confirm your password";
-    } else if (formData.password !== formData.password2) {
-      newErrors.password2 = "Passwords do not match";
-    }
+    if (!formData.first_name) newErrors.first_name = "Required";
+    if (!formData.last_name) newErrors.last_name = "Required";
+    if (!formData.email) newErrors.email = "Required";
+    else if (!/\S+@\S+\.\S+/.test(formData.email))
+      newErrors.email = "Invalid email";
+    if (!formData.phone) newErrors.phone = "Required";
+    if (!formData.location) newErrors.location = "Required";
+    if (!formData.password) newErrors.password = "Required";
+    else if (formData.password.length < 8) newErrors.password = "Min 8 chars";
+    if (formData.password !== formData.password2)
+      newErrors.password2 = "Passwords must match";
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -81,32 +78,24 @@ const Register = () => {
       phone: formData.phone,
       address: formData.location,
       location: formData.location,
-      role: formData.role, // Critical: Send the selected role
+      role: formData.role,
     };
 
     try {
-      // 3. FIX: Use api.post directly instead of the missing context function
       await api.post("/users/register/", registrationData);
-
-      toast.success(
-        `Welcome! Registered as ${formData.role === "service_provider" ? "Driver" : "Resident"}.`,
-      );
-
-      // Redirect to Login so they can get their token
+      toast.success(`Account created! Please login.`);
       navigate("/login");
     } catch (error) {
       console.error("Registration error:", error);
       const errorData = error.response?.data;
-
       if (typeof errorData === "object" && errorData !== null) {
-        // Handle Django dictionary errors
         const firstKey = Object.keys(errorData)[0];
         const message = Array.isArray(errorData[firstKey])
           ? errorData[firstKey][0]
           : errorData[firstKey];
         toast.error(`${firstKey}: ${message}`);
       } else {
-        toast.error("Registration failed. Please try again.");
+        toast.error("Registration failed.");
       }
     } finally {
       setLoading(false);
@@ -114,210 +103,242 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-green-100 flex items-center justify-center p-4 py-12">
-      <div className="max-w-2xl w-full">
-        {/* Logo and Title */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-green-600 rounded-2xl shadow-lg mb-4">
-            <Leaf className="w-10 h-10 text-white" />
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 lg:p-8">
+      {/* Main Card Container */}
+      <div className="bg-white w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden flex flex-col lg:flex-row min-h-[700px]">
+        {/* LEFT SIDE: Vibrant Visuals (CSS Only) */}
+        <div className="hidden lg:flex w-5/12 bg-gradient-to-br from-green-600 to-teal-800 relative p-12 flex-col justify-between overflow-hidden">
+          {/* Decorative Shapes */}
+          <div className="absolute top-0 left-0 w-full h-full opacity-20">
+            <div className="absolute -top-20 -left-20 w-64 h-64 bg-white rounded-full mix-blend-overlay blur-3xl"></div>
+            <div className="absolute bottom-0 right-0 w-80 h-80 bg-green-400 rounded-full mix-blend-overlay blur-3xl"></div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Join RecycleTrack
-          </h1>
-          <p className="text-gray-600 mt-2">
-            Start your journey towards sustainable waste management
-          </p>
+
+          <div className="relative z-10">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-white/80 hover:text-white transition-colors text-sm font-medium mb-8"
+            >
+              <ArrowLeft size={16} /> Back to website
+            </Link>
+            <h2 className="text-4xl font-bold text-white mb-4 leading-tight">
+              Start Your Green <br /> Journey Today.
+            </h2>
+            <p className="text-green-100 text-lg opacity-90">
+              Join a community committed to a cleaner planet. Track, earn, and
+              make an impact.
+            </p>
+          </div>
+
+          {/* Feature List on Left */}
+          <div className="relative z-10 space-y-4">
+            {[
+              "Earn points for every kilo recycled",
+              "Track your environmental impact",
+            ].map((item, idx) => (
+              <div key={idx} className="flex items-center gap-3 text-white/90">
+                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <Check size={14} />
+                </div>
+                <span className="text-sm font-medium">{item}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Registration Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          {/* --- Role Selection Toggle --- */}
-          <div className="flex bg-gray-100 p-1 rounded-xl mb-8">
-            <button
-              type="button"
-              onClick={() => toggleRole(false)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-bold transition-all duration-200 ${
-                formData.role === "resident"
-                  ? "bg-white text-green-700 shadow-md transform scale-100"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <User size={18} /> Resident
-            </button>
-            <button
-              type="button"
-              onClick={() => toggleRole(true)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-bold transition-all duration-200 ${
-                formData.role === "service_provider"
-                  ? "bg-white text-blue-700 shadow-md transform scale-100"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <Truck size={18} /> Driver
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Name Fields */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <Input
-                label="First Name"
-                type="text"
-                name="first_name"
-                placeholder="John"
-                value={formData.first_name}
-                onChange={handleChange}
-                error={errors.first_name}
-                icon={User}
-              />
-              <Input
-                label="Last Name"
-                type="text"
-                name="last_name"
-                placeholder="Doe"
-                value={formData.last_name}
-                onChange={handleChange}
-                error={errors.last_name}
-                icon={User}
-              />
+        {/* RIGHT SIDE: The Form */}
+        <div className="w-full lg:w-7/12 p-8 md:p-12 lg:p-16 bg-white overflow-y-auto">
+          <div className="max-w-lg mx-auto">
+            <div className="text-center lg:text-left mb-8">
+              <div className="inline-flex lg:hidden items-center justify-center w-12 h-12 bg-green-100 rounded-xl mb-4">
+                <Leaf className="w-6 h-6 text-green-600" />
+              </div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Create Account
+              </h1>
+              <p className="text-gray-500 mt-2">
+                Enter your details to get started.
+              </p>
             </div>
 
-            {/* Email */}
-            <Input
-              label="Email Address"
-              type="email"
-              name="email"
-              placeholder="your@email.com"
-              value={formData.email}
-              onChange={handleChange}
-              error={errors.email}
-              icon={Mail}
-              autoComplete="email"
-            />
-
-            {/* Phone and Location */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <Input
-                label="Phone Number"
-                type="tel"
-                name="phone"
-                placeholder="+254 712 345 678"
-                value={formData.phone}
-                onChange={handleChange}
-                error={errors.phone}
-                icon={Phone}
-              />
-              <Input
-                label="Location"
-                type="text"
-                name="location"
-                placeholder="Nairobi, Kenya"
-                value={formData.location}
-                onChange={handleChange}
-                error={errors.location}
-                icon={MapPin}
-              />
+            {/* Role Selection - Modern Segmented Control */}
+            <div className="bg-gray-100 p-1.5 rounded-xl flex mb-8">
+              <button
+                type="button"
+                onClick={() => toggleRole(false)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                  formData.role === "resident"
+                    ? "bg-white text-green-700 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                <User size={16} /> Resident
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleRole(true)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                  formData.role === "service_provider"
+                    ? "bg-white text-blue-700 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                <Truck size={16} /> Driver
+              </button>
             </div>
 
-            {/* Password Fields */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <Input
-                label="Password"
-                type="password"
-                name="password"
-                placeholder="Min. 8 characters"
-                value={formData.password}
-                onChange={handleChange}
-                error={errors.password}
-                icon={Lock}
-                autoComplete="new-password"
-              />
-              <Input
-                label="Confirm Password"
-                type="password"
-                name="password2"
-                placeholder="Re-enter password"
-                value={formData.password2}
-                onChange={handleChange}
-                error={errors.password2}
-                icon={Lock}
-                autoComplete="new-password"
-              />
-            </div>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    First Name
+                  </label>
+                  <div className="relative">
+                    <Input
+                      name="first_name"
+                      placeholder="Jane"
+                      value={formData.first_name}
+                      onChange={handleChange}
+                      error={errors.first_name}
+                      icon={User}
+                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Last Name
+                  </label>
+                  <div className="relative">
+                    <Input
+                      name="last_name"
+                      placeholder="Doe"
+                      value={formData.last_name}
+                      onChange={handleChange}
+                      error={errors.last_name}
+                      icon={User}
+                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
 
-            {/* Terms and Conditions */}
-            <div className="flex items-start">
-              <input
-                type="checkbox"
-                id="terms"
-                required
-                className="mt-1 rounded border-gray-300 text-green-600 focus:ring-green-500"
-              />
-              <label htmlFor="terms" className="ml-2 text-sm text-gray-600">
-                I agree to the{" "}
-                <Link to="/terms" className="text-green-600 hover:underline">
-                  Terms of Service
-                </Link>{" "}
-                and{" "}
-                <Link to="/privacy" className="text-green-600 hover:underline">
-                  Privacy Policy
-                </Link>
-              </label>
-            </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Email
+                </label>
+                <div className="relative">
+                  <Input
+                    type="email"
+                    name="email"
+                    placeholder="jane@example.com"
+                    value={formData.email}
+                    onChange={handleChange}
+                    error={errors.email}
+                    icon={Mail}
+                    className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  />
+                </div>
+              </div>
 
-            {/* Dynamic Submit Button */}
-            <Button
-              type="submit"
-              variant="primary"
-              className={`w-full text-white transition-colors ${
-                formData.role === "service_provider"
-                  ? "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500"
-                  : "bg-green-600 hover:bg-green-700 focus:ring-green-500"
-              }`}
-              loading={loading}
-            >
-              {formData.role === "service_provider"
-                ? "Register as Driver"
-                : "Register as Resident"}
-            </Button>
-          </form>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Phone
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type="tel"
+                      name="phone"
+                      placeholder="+254 700 000"
+                      value={formData.phone}
+                      onChange={handleChange}
+                      error={errors.phone}
+                      icon={Phone}
+                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Location
+                  </label>
+                  <div className="relative">
+                    <Input
+                      name="location"
+                      placeholder="Nairobi"
+                      value={formData.location}
+                      onChange={handleChange}
+                      error={errors.location}
+                      icon={MapPin}
+                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
 
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">
-                Already have an account?
-              </span>
-            </div>
-          </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type="password"
+                      name="password"
+                      placeholder="••••••••"
+                      value={formData.password}
+                      onChange={handleChange}
+                      error={errors.password}
+                      icon={Lock}
+                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Confirm
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type="password"
+                      name="password2"
+                      placeholder="••••••••"
+                      value={formData.password2}
+                      onChange={handleChange}
+                      error={errors.password2}
+                      icon={Lock}
+                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
 
-          {/* Login Link */}
-          <Link to="/login">
-            <Button variant="outline" className="w-full">
-              Login Instead
-            </Button>
-          </Link>
-        </div>
+              <div className="pt-4">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className={`w-full py-4 text-lg font-bold shadow-lg hover:translate-y-[-2px] transition-all rounded-xl ${
+                    formData.role === "service_provider"
+                      ? "bg-blue-600 hover:bg-blue-500 shadow-blue-500/30"
+                      : "bg-green-600 hover:bg-green-500 shadow-green-500/30"
+                  }`}
+                  loading={loading}
+                >
+                  {loading ? "Creating Account..." : "Create Account"}
+                </Button>
+              </div>
+            </form>
 
-        {/* Features Preview */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-          <div className="bg-white/80 rounded-lg p-4 shadow-sm">
-            <div className="text-2xl mb-2">🎮</div>
-            <p className="text-sm font-medium text-gray-900">Earn Points</p>
-            <p className="text-xs text-gray-600">Gamified recycling</p>
-          </div>
-          <div className="bg-white/80 rounded-lg p-4 shadow-sm">
-            <div className="text-2xl mb-2">🗺️</div>
-            <p className="text-sm font-medium text-gray-900">Find Recyclers</p>
-            <p className="text-xs text-gray-600">Nearby locations</p>
-          </div>
-          <div className="bg-white/80 rounded-lg p-4 shadow-sm">
-            <div className="text-2xl mb-2">📚</div>
-            <p className="text-sm font-medium text-gray-900">Learn More</p>
-            <p className="text-xs text-gray-600">Educational resources</p>
+            <p className="mt-8 text-center text-gray-500 text-sm">
+              Already have an account?{" "}
+              <Link
+                to="/login"
+                className="font-bold text-green-700 hover:underline"
+              >
+                Log in
+              </Link>
+            </p>
           </div>
         </div>
       </div>

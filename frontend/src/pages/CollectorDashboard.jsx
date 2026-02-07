@@ -1,34 +1,32 @@
-import React, { useState, useEffect } from "react";
-import { api } from "../services/api";
-import { useAuth } from "../context/AuthContext";
-import toast from "react-hot-toast";
 import {
-  Truck,
-  MapPin,
-  CheckCircle,
-  Package,
-  User,
-  LogOut,
-  Loader,
-  RefreshCw,
-  Clock,
+  AlertCircle,
   Archive,
-  Navigation,
   Calendar,
   CalendarClock,
-  Menu,
-  X,
+  CheckCircle,
+  Clock,
   LayoutDashboard,
-  Wallet, // New Icon
+  Loader,
+  LogOut,
+  MapPin,
+  Menu,
+  Navigation,
+  Package,
+  RefreshCw,
+  Scale,
   TrendingUp,
-  DollarSign,
-  AlertCircle,
+  Truck,
+  Wallet,
+  X,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { useAuth } from "../context/AuthContext";
+import { api } from "../services/api";
 
 const CollectorDashboard = () => {
   const { user, logout } = useAuth();
 
-  // State
   const [activeTab, setActiveTab] = useState("active");
   const [jobs, setJobs] = useState([]);
   const [history, setHistory] = useState([]);
@@ -36,42 +34,56 @@ const CollectorDashboard = () => {
     total_earned: 0,
     pending_amount: 0,
     transactions: [],
-  }); // Wallet State
+  });
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  // Verification State (from previous step)
   const [driverProfile, setDriverProfile] = useState(null);
 
   const NAIROBI_CENTER = [-1.2921, 36.8219];
 
+  // --- ROBUST DATA FETCHING ---
   const fetchData = async () => {
     setLoading(true);
     try {
       // 1. Fetch Jobs
-      const jobRes = await api.get("/users/collector/jobs/");
-      setJobs(Array.isArray(jobRes) ? jobRes : jobRes.data || []);
+      try {
+        const jobRes = await api.get("/users/collector/jobs/");
+        const jobData = jobRes.data ? jobRes.data : jobRes;
+        setJobs(Array.isArray(jobData) ? jobData : []);
+      } catch (err) {
+        console.error("❌ Jobs Error:", err);
+      }
 
       // 2. Fetch History
-      const histRes = await api.get("/users/collector/history/");
-      setHistory(Array.isArray(histRes) ? histRes : histRes.data || []);
+      try {
+        const histRes = await api.get("/users/collector/history/");
+        const histData = histRes.data ? histRes.data : histRes;
+        setHistory(Array.isArray(histData) ? histData : []);
+      } catch (err) {
+        console.error("❌ History Error:", err);
+      }
 
-      // 3. Fetch Wallet (NEW)
-      const walletRes = await api.get("/users/driver/wallet/");
-      setWallet(
-        walletRes.data || {
-          total_earned: 0,
-          pending_amount: 0,
-          transactions: [],
-        },
-      );
+      // 3. Fetch Wallet
+      try {
+        const walletRes = await api.get("/users/driver/wallet/");
+        const walletData = walletRes.data || walletRes;
+        if (walletData && typeof walletData.total_earned !== "undefined") {
+          setWallet(walletData);
+        }
+      } catch (err) {
+        console.error("❌ Wallet Error:", err);
+      }
 
       // 4. Fetch Profile
-      const profileRes = await api.get("/users/profile/");
-      const profileData = profileRes.data || profileRes;
-      setDriverProfile(profileData.driver_profile || {});
+      try {
+        const profileRes = await api.get("/users/profile/");
+        const profileData = profileRes.data || profileRes;
+        setDriverProfile(profileData.driver_profile || {});
+      } catch (err) {
+        console.error(err);
+      }
     } catch (error) {
-      console.error("Failed to load data:", error);
+      console.error("Global Fetch Error:", error);
     }
     setLoading(false);
   };
@@ -80,7 +92,6 @@ const CollectorDashboard = () => {
     fetchData();
   }, []);
 
-  // --- HELPER FUNCTIONS ---
   const getJobCoordinates = (job) => {
     const lat = parseFloat(job.latitude);
     const lng = parseFloat(job.longitude);
@@ -95,14 +106,25 @@ const CollectorDashboard = () => {
     );
   };
 
-  const handleConfirm = async (id) => {
-    if (!window.confirm("Confirm you have collected these items?")) return;
+  const handleBillUser = async (id) => {
+    const weightStr = window.prompt(
+      "Enter the actual weight collected (KG):",
+      "0",
+    );
+    if (!weightStr) return;
+
+    const weight = parseFloat(weightStr);
+    if (isNaN(weight) || weight <= 0) {
+      return toast.error("Please enter a valid weight greater than 0");
+    }
+
     try {
-      await api.patch(`/users/collector/confirm/${id}/`);
-      toast.success("Pickup Confirmed! Earnings moved to Pending.");
-      fetchData(); // Refresh to update wallet pending status
+      const toastId = toast.loading("Sending bill to user...");
+      await api.patch(`/users/driver/bill-job/${id}/`, { weight });
+      toast.success("Bill sent! Waiting for user payment.", { id: toastId });
+      fetchData();
     } catch (error) {
-      toast.error("Failed to confirm pickup");
+      toast.error("Failed to submit bill");
     }
   };
 
@@ -148,7 +170,7 @@ const CollectorDashboard = () => {
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
-      {/* 1. SIDEBAR */}
+      {/* SIDEBAR */}
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm"
@@ -202,8 +224,7 @@ const CollectorDashboard = () => {
               label="Active Tasks"
               icon={LayoutDashboard}
             />
-            <SidebarItem id="wallet" label="Wallet & Earnings" icon={Wallet} />{" "}
-            {/* NEW WALLET TAB */}
+            <SidebarItem id="wallet" label="Wallet & Earnings" icon={Wallet} />
             <SidebarItem id="history" label="Job History" icon={Archive} />
           </nav>
 
@@ -224,7 +245,7 @@ const CollectorDashboard = () => {
         </div>
       </aside>
 
-      {/* 2. MAIN CONTENT */}
+      {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative bg-gray-50">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-8 shrink-0 shadow-sm">
           <div className="flex items-center gap-3">
@@ -264,9 +285,8 @@ const CollectorDashboard = () => {
               </div>
             ) : (
               <>
-                {/* --- ACTIVE TAB --- */}
+                {/* ACTIVE TAB */}
                 {activeTab === "active" && (
-                  // ... (Your Existing Active Tab Code)
                   <div className="space-y-8 animate-in fade-in duration-500">
                     {jobs.length === 0 ? (
                       <div className="text-center p-16 bg-white rounded-3xl border-2 border-dashed border-gray-200 text-gray-400">
@@ -291,8 +311,8 @@ const CollectorDashboard = () => {
                             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                               <div className="overflow-x-auto">
                                 <table className="w-full text-left border-collapse">
-                                  <thead>
-                                    <tr className="bg-gray-50 border-b border-gray-100 text-xs uppercase text-gray-500 font-bold tracking-wider">
+                                  <thead className="bg-gray-50 border-b border-gray-100 text-xs uppercase text-gray-500 font-bold tracking-wider">
+                                    <tr>
                                       <th className="p-4">Customer</th>
                                       <th className="p-4">Waste Info</th>
                                       <th className="p-4">Location</th>
@@ -333,9 +353,19 @@ const CollectorDashboard = () => {
                                               />
                                               <span>{job.waste_type}</span>
                                             </div>
-                                            <span className="text-xs font-bold text-gray-500 ml-6">
-                                              {job.quantity}
-                                            </span>
+                                            <div className="ml-6 flex flex-col">
+                                              {/* ACTIVE TAB LOGIC */}
+                                              <span className="text-xs font-bold text-gray-500">
+                                                {job.actual_quantity > 0
+                                                  ? `${job.actual_quantity} kg`
+                                                  : job.quantity}
+                                              </span>
+                                              {job.billed_amount > 0 && (
+                                                <span className="text-xs font-bold text-green-600 bg-green-50 px-1 rounded w-fit mt-1">
+                                                  Bill: KES {job.billed_amount}
+                                                </span>
+                                              )}
+                                            </div>
                                           </td>
                                           <td className="p-4">
                                             <div className="max-w-[200px]">
@@ -375,20 +405,24 @@ const CollectorDashboard = () => {
                                                   )
                                                 }
                                                 className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition"
-                                                title="Navigate"
                                               >
                                                 <Navigation size={18} />
                                               </button>
                                               {job.status === "assigned" && (
                                                 <button
                                                   onClick={() =>
-                                                    handleConfirm(job.id)
+                                                    handleBillUser(job.id)
                                                   }
                                                   className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition shadow-sm"
                                                 >
-                                                  <CheckCircle size={14} />{" "}
-                                                  Complete
+                                                  <Scale size={14} /> Weigh &
+                                                  Bill
                                                 </button>
+                                              )}
+                                              {job.status === "collected" && (
+                                                <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded border border-orange-200">
+                                                  Wait for Pay
+                                                </span>
                                               )}
                                             </div>
                                           </td>
@@ -406,12 +440,10 @@ const CollectorDashboard = () => {
                   </div>
                 )}
 
-                {/* --- NEW: WALLET TAB --- */}
+                {/* WALLET TAB */}
                 {activeTab === "wallet" && (
                   <div className="space-y-6 animate-in fade-in duration-500">
-                    {/* Wallet Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Available Balance */}
                       <div className="bg-gradient-to-br from-green-600 to-green-700 p-6 rounded-2xl text-white shadow-lg shadow-green-200">
                         <div className="flex justify-between items-start mb-4">
                           <div className="bg-white/20 p-2 rounded-lg">
@@ -422,19 +454,13 @@ const CollectorDashboard = () => {
                           </span>
                         </div>
                         <p className="text-green-100 text-sm font-medium mb-1">
-                          Total Earned (Paid)
+                          Total Earned (Verified)
                         </p>
                         <h2 className="text-4xl font-bold">
                           KES {wallet.total_earned}
                         </h2>
-                        <p className="text-xs text-green-200 mt-4 flex items-center gap-1">
-                          <CheckCircle size={12} /> Verified by Admin
-                        </p>
                       </div>
-
-                      {/* Pending Balance */}
                       <div className="bg-white p-6 rounded-2xl border border-orange-200 shadow-sm relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50 rounded-full -mr-10 -mt-10 z-0"></div>
                         <div className="relative z-10">
                           <div className="flex justify-between items-start mb-4">
                             <div className="bg-orange-100 p-2 rounded-lg">
@@ -453,16 +479,12 @@ const CollectorDashboard = () => {
                           <h2 className="text-4xl font-bold text-gray-800">
                             KES {wallet.pending_amount}
                           </h2>
-                          <p className="text-xs text-orange-500 mt-4 flex items-center gap-1">
-                            <Clock size={12} /> Waiting for Admin Verification
-                          </p>
                         </div>
                       </div>
                     </div>
-
-                    {/* Transaction History Table */}
+                    {/* Transaction History */}
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                      <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+                      <div className="p-6 border-b border-gray-100">
                         <h3 className="font-bold text-gray-800 flex items-center gap-2">
                           <TrendingUp className="text-blue-500" size={20} />{" "}
                           Payment History
@@ -485,7 +507,7 @@ const CollectorDashboard = () => {
                                   colSpan="4"
                                   className="p-8 text-center text-gray-400 italic"
                                 >
-                                  No payments received yet.
+                                  No payments yet.
                                 </td>
                               </tr>
                             ) : (
@@ -508,7 +530,7 @@ const CollectorDashboard = () => {
                                     </p>
                                   </td>
                                   <td className="p-4 text-green-600 font-bold">
-                                    + KES 200.00
+                                    + KES {100 + txn.billed_amount * 0.2}
                                   </td>
                                   <td className="p-4">
                                     <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">
@@ -525,9 +547,8 @@ const CollectorDashboard = () => {
                   </div>
                 )}
 
-                {/* --- HISTORY TAB --- */}
+                {/* HISTORY TAB */}
                 {activeTab === "history" && (
-                  // ... (Your Existing History Code)
                   <div className="space-y-4 animate-in fade-in duration-500">
                     {history.length === 0 ? (
                       <div className="text-center p-12 text-gray-400 italic bg-white rounded-2xl border border-gray-100">
@@ -548,7 +569,20 @@ const CollectorDashboard = () => {
                                 {job.user_full_name}
                               </h4>
                               <p className="text-sm text-gray-500">
-                                {job.waste_type} • {job.quantity}
+                                {job.waste_type} •{" "}
+                                {
+                                  // --- FIX STARTS HERE ---
+                                  // If Verified/Paid, NEVER show "Pending"
+                                  job.status === "verified" ||
+                                  job.status === "paid"
+                                    ? job.actual_quantity > 0
+                                      ? `${job.actual_quantity} kg`
+                                      : "Completed"
+                                    : job.actual_quantity > 0
+                                      ? `${job.actual_quantity} kg`
+                                      : job.quantity
+                                  // --- FIX ENDS HERE ---
+                                }
                               </p>
                             </div>
                           </div>
