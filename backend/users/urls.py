@@ -1,4 +1,5 @@
 from django.urls import path
+
 from .views import (
     CustomTokenObtainPairView, 
     register_user, 
@@ -25,6 +26,9 @@ from .views import (
     admin_verify_and_pay,
     verify_driver,
     get_driver_wallet,
+    get_notifications,
+    mark_notifications_read,
+    bill_collection_job,
 )
 
 urlpatterns = [
@@ -55,21 +59,26 @@ urlpatterns = [
     path('admin/collectors/', get_all_collectors, name='get_collectors'),
     path('admin/collectors/create/', create_collector, name='create_collector'),
     path('admin/collectors/<int:collector_id>/delete/', delete_collector, name='delete_collector'),
-    
-    # --- ADMIN: DRIVER VERIFICATION ---
-    path('admin/verify-driver/<int:driver_id>/', verify_driver, name='verify_driver'), # <-- NEW PATH
+    path('admin/verify-driver/<int:driver_id>/', verify_driver, name='verify_driver'),
 
     # --- DRIVER/COLLECTOR WORKFLOW ---
     path('driver/register-docs/', register_driver_docs, name='register_driver_docs'),
     path('pickup/assign/<int:request_id>/', assign_collector, name='assign_collector'),
     path('collector/jobs/', get_collector_jobs, name='collector_jobs'),
     path('collector/confirm/<int:request_id>/', confirm_collection_job, name='confirm_job'),
+    path('driver/bill-job/<int:request_id>/', bill_collection_job, name='bill_job'), 
+    
+    # FIX: Removed 'views.' prefix because it is imported directly above
     path('driver/wallet/', get_driver_wallet, name='driver_wallet'),
 
     # --- ADMIN VERIFICATION & Payout ---
-   path('pickup/verify/<int:request_id>/', admin_verify_and_pay, name='admin_verify_and_pay'),
+    path('pickup/verify/<int:request_id>/', admin_verify_and_pay, name='admin_verify_and_pay'),
 
     # --- HISTORY ---
     path('admin/history/', get_admin_history, name='admin_history'),
-    path('collector/history/', get_collector_history, name='collector_history')
+    path('collector/history/', get_collector_history, name='collector_history'),
+
+    # --- NOTIFICATIONS ---
+    path('notifications/', get_notifications, name='get_notifications'),
+    path('notifications/read/', mark_notifications_read, name='mark_notifications_read'),
 ]

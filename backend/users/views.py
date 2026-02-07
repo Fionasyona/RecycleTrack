@@ -6,17 +6,46 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db import transaction
+from django.db.models import F, Sum, Q 
+from decimal import Decimal
 from .serializers import (
     UserSerializer, 
     CustomTokenObtainPairSerializer, 
     PickupRequestSerializer, 
-    PaymentSerializer
+    PaymentSerializer,
+    NotificationSerializer
 )
-from .models import RecyclingLog, PickupRequest, Payment, DriverProfile
+from .models import (
+    RecyclingCenter, 
+    RecyclingLog, 
+    PickupRequest, 
+    Payment, 
+    DriverProfile, 
+    Notification
+)
 import uuid
 import random 
 
 User = get_user_model()
+
+# --- CONFIGURATION ---
+WASTE_PRICES = {
+    'Plastic': 50,  # KES per KG
+    'Paper': 30,
+    'Metal': 100,
+    'Glass': 40,
+    'Electronics': 200
+}
+
+# Fixed points regardless of weight
+POINTS_CONFIG = {
+    'Plastic': 20,
+    'Glass': 15,
+    'Paper': 10,
+    'Metal': 30,
+    'Electronics': 50
+}
 
 # --- 1. AUTHENTICATION ---
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -29,7 +58,6 @@ def register_user(request):
     serializer = UserSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
-        # Assign random offset to avoid stacking on map
         user.latitude = -1.2921 + random.uniform(-0.05, 0.05)
         user.longitude = 36.8219 + random.uniform(-0.05, 0.05)
         user.save()
@@ -93,21 +121,82 @@ def get_collector_jobs(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def confirm_collection_job(request, request_id):
+    # Fallback
     job = get_object_or_404(PickupRequest, id=request_id, collector=request.user)
     if job.status != 'assigned':
         return Response({"error": "Job is not in assigned state"}, status=400)
     job.status = 'collected'
     job.save()
-    return Response({"message": "Confirmed. Waiting for admin verification."})
+    return Response({"message": "Confirmed."})
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def bill_collection_job(request, request_id):
+    job = get_object_or_404(PickupRequest, id=request_id, collector=request.user)
+    
+    if job.status != 'assigned':
+        return Response({"error": "Job must be assigned first"}, status=400)
+
+    try:
+        actual_weight = float(request.data.get('weight', 0))
+    except ValueError:
+        return Response({"error": "Invalid weight"}, status=400)
+
+    if actual_weight <= 0:
+        return Response({"error": "Weight must be greater than 0"}, status=400)
+
+    # Calculate Bill
+    price_per_unit = WASTE_PRICES.get(job.waste_type, 50)
+    bill_total = actual_weight * price_per_unit
+    
+    # Ensure bill isn't 0
+    if bill_total <= 0:
+        bill_total = 50.0 
+
+    # Update Job
+    job.actual_quantity = actual_weight
+    job.billed_amount = bill_total
+    job.status = 'collected' 
+    job.save()
+
+    # Notify User
+    Notification.objects.create(
+        user=job.user,
+        message=f"Pickup Complete! Weight: {actual_weight}kg. Total Bill: KES {bill_total}. Please go to your dashboard to pay.",
+        pickup=job
+    )
+
+    return Response({
+        "message": "Bill sent to user", 
+        "amount": bill_total, 
+        "weight": actual_weight
+    })
 
 # --- 4. PICKUP REQUESTS ---
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_pickup_request(request):
-    serializer = PickupRequestSerializer(data=request.data)
+    # Make mutable copy
+    data = request.data.copy()
+    
+    # Resolve center_name to ID
+    center_name = data.get('center_name')
+    if center_name:
+        center_obj = RecyclingCenter.objects.filter(name=center_name).first()
+        if center_obj:
+            data['center'] = center_obj.id 
+    
+    # Ensure quantity is set
+    if not data.get('quantity'):
+        data['quantity'] = "Pending Weighing"
+
+    serializer = PickupRequestSerializer(data=data)
     if serializer.is_valid():
         serializer.save(user=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    # Print error for debugging
+    print("Serializer Error:", serializer.errors)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
@@ -141,31 +230,80 @@ def assign_collector(request, request_id):
     pickup.assigned_at = timezone.now()
     pickup.save()
     
+    Notification.objects.create(
+        user=pickup.user,
+        message=f"Your pickup request for {pickup.waste_type} has been assigned to driver {collector.first_name}.",
+        pickup=pickup
+    )
+    Notification.objects.create(
+        user=collector,
+        message=f"New Job Assigned: {pickup.waste_type} in {pickup.region}.",
+        pickup=pickup
+    )
+    
     return Response({"message": f"Assigned to {collector.get_full_name()}"})
 
+# --- ADMIN VERIFY (BULLET-PROOF LOGIC) ---
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
+@transaction.atomic
 def admin_verify_and_pay(request, request_id):
     pickup = get_object_or_404(PickupRequest, id=request_id)
-    if pickup.status != 'collected':
-        return Response({"error": "Waste must be collected first"}, status=400)
-
-    user = pickup.user
-    points = {'Plastic': 20, 'Glass': 15, 'Paper': 10, 'Metal': 30, 'Electronics': 50}.get(pickup.waste_type, 20)
-    user.points += points
-    user.update_badge()
     
-    # Safely update driver profile if exists
-    if hasattr(pickup.collector, 'driver_profile'):
-        driver_profile = pickup.collector.driver_profile
-        driver_profile.total_earned += 200 
-        driver_profile.save()
+    if not pickup.is_paid:
+        return Response({"error": "User has not paid the bill yet."}, status=400)
 
-    pickup.status = 'paid'
+    if pickup.status == 'verified':
+        return Response({"error": "Job already verified."}, status=400)
+
+    # 1. Calculate Payout
+    user_paid_amount = Decimal(str(pickup.billed_amount))
+    DRIVER_BASE_FEE = Decimal("100.00")
+    COMMISSION_RATE = Decimal("0.20")
+    
+    driver_payout = DRIVER_BASE_FEE + (user_paid_amount * COMMISSION_RATE)
+
+    # 2. Update User Points
+    earned_points = POINTS_CONFIG.get(pickup.waste_type, 10)
+    
+    pickup.user.points = F('points') + earned_points
+    pickup.user.save() 
+    pickup.user.refresh_from_db()
+    pickup.user.update_badge() 
+
+    # 3. Pay Driver
+    if pickup.collector:
+        driver_profile, _ = DriverProfile.objects.get_or_create(
+            user=pickup.collector,
+            defaults={'total_earned': 0.00, 'id_no': f'FIX-{pickup.collector.id}', 'license_no': f'FIX-{pickup.collector.id}'}
+        )
+        current = Decimal(str(driver_profile.total_earned))
+        driver_profile.total_earned = current + driver_payout
+        driver_profile.save()
+        
+        Notification.objects.create(
+            user=pickup.collector,
+            message=f"Job #{pickup.id} Verified. KES {driver_payout} added to earnings.",
+            pickup=pickup
+        )
+
+    # 4. Finalize
+    pickup.status = 'verified'
     pickup.save()
 
-    RecyclingLog.objects.create(user=user, points_awarded=points, waste_type=pickup.waste_type, quantity=pickup.quantity, description="Admin Verified & Paid")
-    return Response({"message": "Verification and Payment complete."})
+    RecyclingLog.objects.create(
+        user=pickup.user, 
+        points_awarded=earned_points, 
+        waste_type=pickup.waste_type, 
+        quantity=f"{pickup.actual_quantity} kg", 
+        description="Completed"
+    )
+    
+    return Response({
+        "message": "Verified", 
+        "driver_payout": float(driver_payout),
+        "user_points": earned_points
+    })
 
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
@@ -174,6 +312,13 @@ def reject_pickup_request(request, request_id):
     pickup.status = 'cancelled'
     pickup.rejection_reason = request.data.get('reason', 'No reason provided')
     pickup.save()
+    
+    Notification.objects.create(
+        user=pickup.user,
+        message=f"Your pickup request was rejected: {pickup.rejection_reason}",
+        pickup=pickup
+    )
+    
     return Response({"message": "Rejected"})
 
 @api_view(['GET'])
@@ -218,12 +363,10 @@ def delete_collector(request, collector_id):
     get_object_or_404(User, id=collector_id, role='service_provider').delete()
     return Response({"message": "Deleted"})
 
-# --- NEW: VERIFY DRIVER (Replaces TEMP ID with Verified Status) ---
 @api_view(['PATCH'])
 @permission_classes([IsAdminUser])
 def verify_driver(request, driver_id):
     driver = get_object_or_404(User, id=driver_id, role='service_provider')
-    # Access the driver profile
     if hasattr(driver, 'driver_profile'):
         profile = driver.driver_profile
         profile.is_verified = True
@@ -246,35 +389,107 @@ def get_collector_history(request):
     history = PickupRequest.objects.filter(collector=request.user, status__in=['paid', 'verified']).order_by('-scheduled_date')
     return Response(PickupRequestSerializer(history, many=True).data)
 
-# --- 6. PAYMENTS ---
+# --- 6. PAYMENTS & WALLET ---
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def initiate_payment(request):
     pickup = get_object_or_404(PickupRequest, id=request.data.get('pickup_id'), user=request.user)
-    trans_code = f"MPESA-{uuid.uuid4().hex[:8].upper()}"
-    Payment.objects.create(user=request.user, pickup_request=pickup, transaction_code=trans_code, amount=request.data.get('amount', 100), phone_number=request.data.get('phone', request.user.phone), status='completed')
-    return Response({"message": "Payment Successful", "status": "completed", "transaction_code": trans_code})
+    
+    if pickup.billed_amount <= 0:
+        return Response({"error": "Driver has not verified the weight yet."}, status=400)
 
+    if pickup.is_paid:
+        return Response({"error": "This bill is already paid."}, status=400)
+
+    amount_to_pay = float(pickup.billed_amount)
+    trans_code = f"MPESA-{uuid.uuid4().hex[:8].upper()}"
+    
+    Payment.objects.create(
+        user=request.user, 
+        pickup_request=pickup, 
+        transaction_code=trans_code, 
+        amount=amount_to_pay, 
+        phone_number=request.data.get('phone', request.user.phone), 
+        status='completed'
+    )
+    
+    pickup.is_paid = True
+    pickup.save()
+
+    return Response({"message": "Payment Successful", "status": "completed", "amount": amount_to_pay})
+
+# --- FIXED: HYBRID WALLET CHECK ---
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_driver_wallet(request):
     if request.user.role != 'service_provider':
         return Response({"error": "Unauthorized"}, status=403)
     
-    # 1. Calculate Pending Earnings (Jobs marked 'collected' but not yet 'paid')
-    # Assuming flat rate of 200 KES per job as per your admin_verify logic
-    pending_jobs = PickupRequest.objects.filter(collector=request.user, status='collected')
-    pending_amount = pending_jobs.count() * 200 
+    # --- DEBUGGING ---
+    print(f"\n--- WALLET REQUEST START ---")
+    print(f"User: {request.user.email} (ID: {request.user.id})")
     
-    # 2. Get Verified Earnings (Available Balance)
-    profile = request.user.driver_profile
+    # 1. Real-Time Calculation
+    # Includes verified, paid, and collected+paid jobs
+    completed_jobs = PickupRequest.objects.filter(
+        collector=request.user
+    ).filter(
+        Q(status='verified') | Q(status='paid') | (Q(status='collected') & Q(is_paid=True))
+    )
     
-    # 3. Get Transaction History (Jobs marked 'paid')
-    paid_jobs = PickupRequest.objects.filter(collector=request.user, status='paid').order_by('-scheduled_date')
+    total_billed = completed_jobs.aggregate(Sum('billed_amount'))['billed_amount__sum'] or 0.0
+    base_pay = 100.0 * completed_jobs.count()
+    commission = float(total_billed) * 0.20
+    calculated_total = base_pay + commission
     
+    # 2. Stored DB Value (The Safety Net)
+    try:
+        profile = request.user.driver_profile
+        stored_total = float(profile.total_earned)
+    except DriverProfile.DoesNotExist:
+        profile = DriverProfile.objects.create(user=request.user)
+        stored_total = 0.0
+        
+    print(f"Calculated: {calculated_total} | Stored in DB: {stored_total}")
+
+    # 3. SAFETY CHECK: Use whichever is higher
+    # This fixes the "Wallet 0" bug by trusting the database if calculation fails
+    final_total = max(calculated_total, stored_total)
+    
+    # 4. Pending
+    pending_jobs = PickupRequest.objects.filter(
+        collector=request.user, 
+        status__in=['assigned', 'collected'],
+        is_paid=False
+    )
+    pending_amount = 0.0
+    for job in pending_jobs:
+        if job.billed_amount > 0:
+            pending_amount += 100.0 + (float(job.billed_amount) * 0.20)
+
+    # 5. History
+    transactions = PickupRequestSerializer(completed_jobs.order_by('-scheduled_date'), many=True).data
+
+    print(f"Returning Final Wallet Balance: {final_total}")
+    print(f"--- WALLET REQUEST END ---\n")
+
     return Response({
-        "total_earned": profile.total_earned, # Available Balance
-        "pending_amount": pending_amount,     # Waiting for Admin
+        "total_earned": round(final_total, 2),
+        "pending_amount": round(pending_amount, 2),
         "currency": "KES",
-        "transactions": PickupRequestSerializer(paid_jobs, many=True).data
+        "transactions": transactions
     })
+
+# --- 7. NOTIFICATIONS ---
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_notifications(request):
+    notifs = Notification.objects.filter(user=request.user).order_by('-created_at')
+    return Response(NotificationSerializer(notifs, many=True).data)
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def mark_notifications_read(request):
+    Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+    return Response({"message": "All marked as read"})

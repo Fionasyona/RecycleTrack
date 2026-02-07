@@ -13,7 +13,6 @@ class RecycleUser(AbstractUser):
         ('admin', 'Admin'),
     ]
     
-    # Ensure email is unique for authentication
     email = models.EmailField(unique=True) 
     
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='resident')
@@ -25,14 +24,11 @@ class RecycleUser(AbstractUser):
     latitude = models.FloatField(default=-1.2921)
     longitude = models.FloatField(default=36.8219)
 
-    # Required for custom user models to avoid conflicts
     groups = models.ManyToManyField(Group, related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField(Permission, related_name='custom_user_set', blank=True)
 
-    # --- THE FIX FOR LOGIN ---
-    USERNAME_FIELD = 'email'      # Makes email the primary login field
-    REQUIRED_FIELDS = ['username'] # 'username' is still required by Django internally
-    # -------------------------
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
 
     def update_badge(self):
         if self.points >= 2000: self.badge = "Max Level"
@@ -82,10 +78,16 @@ class PickupRequest(models.Model):
     collector = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_jobs')
     
     waste_type = models.CharField(max_length=50)
-    quantity = models.CharField(max_length=50)
+    quantity = models.CharField(max_length=50) # Initial estimate by user
     scheduled_date = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     
+    # --- NEW FIELDS FOR BILLING ---
+    actual_quantity = models.FloatField(default=0.0) # Verified weight by driver
+    billed_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00) # Calculated cost
+    is_paid = models.BooleanField(default=False) # Payment status
+    # ------------------------------
+
     pickup_address = models.CharField(max_length=255, blank=True, null=True)
     region = models.CharField(max_length=100, blank=True, null=True)
     latitude = models.FloatField(blank=True, null=True)
@@ -122,28 +124,32 @@ class Payment(models.Model):
     status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default='pending')
     date = models.DateTimeField(auto_now_add=True)
 
+# --- 7. NOTIFICATION MODEL ---
+class Notification(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    pickup = models.ForeignKey(PickupRequest, on_delete=models.SET_NULL, null=True, blank=True)
 
-# --- 7. SIGNALS: AUTO-CREATE DRIVER PROFILE ---
+    def __str__(self):
+        return f"Notification for {self.user.email} - {self.message[:20]}"
+
+# --- 8. SIGNALS ---
 @receiver(post_save, sender=RecycleUser)
 def create_driver_profile(sender, instance, created, **kwargs):
-    """
-    Automatically creates a DriverProfile when a user with role 'service_provider' is created.
-    Assigns a temporary unique ID to prevent database IntegrityError.
-    """
     if created and instance.role == 'service_provider':
         DriverProfile.objects.get_or_create(
             user=instance,
             defaults={
-                # This fixes the crash by ensuring id_no is unique
                 'id_no': f"TEMP-{instance.id}", 
                 'license_no': f"TEMP-{instance.id}",
                 'total_earned': 0.00
             }
         )
+
 @receiver(post_save, sender=RecycleUser)
 def save_driver_profile(sender, instance, **kwargs):
-    """
-    Ensures the profile is saved whenever the user is updated.
-    """
     if instance.role == 'service_provider' and hasattr(instance, 'driver_profile'):
-        instance.driver_profile.save()    
+        instance.driver_profile.save()

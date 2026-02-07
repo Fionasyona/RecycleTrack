@@ -1,122 +1,96 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import PickupRequest, RecyclingCenter, Payment, DriverProfile
+from .models import PickupRequest, DriverProfile, Notification
 
 User = get_user_model()
 
-# --- 1. DRIVER PROFILE SERIALIZER ---
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'message', 'is_read', 'created_at']
+
 class DriverProfileSerializer(serializers.ModelSerializer):
+    # FIX: Force total_earned to be a Float to ensure frontend shows numbers correctly
+    total_earned = serializers.FloatField(read_only=True)
+
     class Meta:
         model = DriverProfile
         fields = ['id_no', 'license_no', 'is_verified', 'total_earned']
-        read_only_fields = ['is_verified', 'total_earned']
 
-# --- 2. USER SERIALIZER (Registration & Profile) ---
 class UserSerializer(serializers.ModelSerializer):
-    badge = serializers.ReadOnlyField()
-    full_name = serializers.CharField(source='get_full_name', read_only=True)
     driver_profile = DriverProfileSerializer(read_only=True)
-    
-    # Write-only fields for registration input
-    location = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    full_name_input = serializers.CharField(write_only=True, required=False)
+    full_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
-            'id', 'email', 'full_name', 'full_name_input', 'first_name', 'last_name', 
-            'password', 'role', 'phone', 'address', 'location', 'points', 'badge', 'date_joined',
-            'is_active', 'driver_profile'
+            'id', 'email', 'first_name', 'last_name', 'full_name', 
+            'phone', 'role', 'points', 'badge', 'address', 
+            'latitude', 'longitude', 'is_active', 'driver_profile'
         ]
-        read_only_fields = ['id', 'points', 'badge', 'date_joined', 'driver_info']
         extra_kwargs = {'password': {'write_only': True}}
 
+    def get_full_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name if name else obj.email.split('@')[0]
+
     def create(self, validated_data):
-        email = validated_data['email'] 
-        full_name_raw = validated_data.pop('full_name_input', '') or self.initial_data.get('full_name', '')
-        
-        first_name = validated_data.get('first_name', '')
-        last_name = validated_data.get('last_name', '')
-
-        if full_name_raw and not first_name:
-            parts = full_name_raw.strip().split(' ', 1)
-            first_name = parts[0]
-            if len(parts) > 1: last_name = parts[1]
-
-        user = User.objects.create_user(
-            username=email, # Django uses 'username' internally for the primary identifier
-            email=email,
-            password=validated_data['password'],
-            first_name=first_name, 
-            last_name=last_name,   
-            phone=validated_data.get('phone', ''),
-            address=validated_data.get('address', '') or validated_data.get('location', ''),
-            role=validated_data.get('role', 'resident')
-        )
+        password = validated_data.pop('password', None)
+        user = User(**validated_data)
+        if password:
+            user.set_password(password)
+        user.save()
         return user
 
-# --- 3. LOGIN SERIALIZER (The 400 Error Fix) ---
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    # These fields must be explicitly defined to match your React Login payload
-    email = serializers.EmailField()
-    password = serializers.CharField(style={'input_type': 'password'})
-
-    def validate(self, attrs):
-        # IMPORTANT: Django's authenticate() looks for 'username'
-        # We manually copy the 'email' value to 'username' here
-        attrs['username'] = attrs.get('email')
-        
-        # Now super().validate will work because 'username' is present
-        data = super().validate(attrs)
-
-        # Include custom data for your React Frontend/AuthContext
-        data['user'] = {
-            'id': self.user.id,
-            'email': self.user.email,
-            'full_name': self.user.get_full_name(), 
-            'role': self.user.role,
-            'points': self.user.points,
-            'badge': self.user.badge,
-            'phone': self.user.phone,     
-            'address': self.user.address,
-            'is_verified_driver': getattr(self.user.driver_profile, 'is_verified', False) if self.user.role == 'service_provider' else None
-        }
-        return data
-
-# --- 4. PICKUP REQUEST SERIALIZER ---
 class PickupRequestSerializer(serializers.ModelSerializer):
-    user_email = serializers.ReadOnlyField(source='user.email')
-    user_full_name = serializers.ReadOnlyField(source='user.get_full_name')
-    collector_name = serializers.ReadOnlyField(source='collector.get_full_name')
-    center_name = serializers.CharField(source='center.name', read_only=True)
-    payment_status = serializers.SerializerMethodField()
-
-    def get_payment_status(self, obj):
-        return "Paid" if Payment.objects.filter(pickup_request=obj, status='completed').exists() else "Unpaid"
-
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    
+    billed_amount = serializers.FloatField(read_only=True)
+    actual_quantity = serializers.FloatField(read_only=True)
+    
     class Meta:
         model = PickupRequest
         fields = [
-            'id', 'user', 'user_email', 'user_full_name', 
-            'waste_type', 'quantity', 'scheduled_date', 'status', 
-            'created_at', 'rejection_reason',
-            'collector', 'collector_name',
-            'center', 'center_name', 
-            'latitude', 'longitude',
-            'pickup_address', 'region',
-            'assigned_at', 'payment_status',
-            'rating', 'was_on_time', 'review_text'
+            'id', 'user', 'user_full_name', 'center', 'collector', 
+            'waste_type', 'quantity', 'scheduled_date', 'status',
+            'pickup_address', 'region', 'latitude', 'longitude',
+            'assigned_at', 'rating', 'was_on_time', 'review_text', 
+            'rejection_reason', 'created_at', 
+            'billed_amount', 'actual_quantity', 'is_paid'
         ]
-        read_only_fields = ['status', 'collector', 'created_at', 'user', 'assigned_at']
 
-# --- 5. UTILITY SERIALIZERS ---
-class RecyclingCenterSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = RecyclingCenter
-        fields = '__all__'
+    def get_user_full_name(self, obj):
+        if obj.user:
+            name = f"{obj.user.first_name} {obj.user.last_name}".strip()
+            return name if name else obj.user.email.split('@')[0]
+        return "Unknown User"
 
-class PaymentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Payment
-        fields = '__all__'
+class CustomTokenObtainPairSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        from django.contrib.auth import authenticate
+        email = attrs.get('email')
+        password = attrs.get('password')
+
+        if email and password:
+            user = authenticate(request=self.context.get('request'), email=email, password=password)
+            if not user:
+                raise serializers.ValidationError('Invalid email or password.')
+        else:
+            raise serializers.ValidationError('Must include "email" and "password".')
+
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': UserSerializer(user).data
+        }
+
+class PaymentSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    phone = serializers.CharField(max_length=15)
