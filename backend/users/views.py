@@ -13,14 +13,14 @@ from .serializers import (
     UserSerializer, 
     CustomTokenObtainPairSerializer, 
     PickupRequestSerializer, 
-    PaymentSerializer,
     NotificationSerializer
 )
 from .models import (
     RecyclingCenter, 
     RecyclingLog, 
     PickupRequest, 
-    Payment, 
+    Wallet, 
+    WalletTransaction, 
     DriverProfile, 
     Notification
 )
@@ -35,16 +35,16 @@ WASTE_PRICES = {
     'Paper': 30,
     'Metal': 100,
     'Glass': 40,
-    'Electronics': 200
+    'E-waste': 200
 }
 
-# Fixed points regardless of weight
+# Points awarded per verification (independent of weight)
 POINTS_CONFIG = {
     'Plastic': 20,
     'Glass': 15,
     'Paper': 10,
     'Metal': 30,
-    'Electronics': 50
+    'E-waste': 50
 }
 
 # --- 1. AUTHENTICATION ---
@@ -58,6 +58,7 @@ def register_user(request):
     serializer = UserSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
+        # Randomize location slightly for demo purposes
         user.latitude = -1.2921 + random.uniform(-0.05, 0.05)
         user.longitude = 36.8219 + random.uniform(-0.05, 0.05)
         user.save()
@@ -89,7 +90,8 @@ def get_user_profile(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_leaderboard(request):
-    leaders = User.objects.filter(role='resident', is_staff=False).order_by('-points')[:20]
+    # Leaderboard is based on LIFETIME points (Status)
+    leaders = User.objects.filter(role='resident', is_staff=False).order_by('-lifetime_points')[:20]
     return Response(UserSerializer(leaders, many=True).data)
 
 @api_view(['DELETE'])
@@ -121,7 +123,6 @@ def get_collector_jobs(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def confirm_collection_job(request, request_id):
-    # Fallback
     job = get_object_or_404(PickupRequest, id=request_id, collector=request.user)
     if job.status != 'assigned':
         return Response({"error": "Job is not in assigned state"}, status=400)
@@ -176,17 +177,14 @@ def bill_collection_job(request, request_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_pickup_request(request):
-    # Make mutable copy
     data = request.data.copy()
     
-    # Resolve center_name to ID
     center_name = data.get('center_name')
     if center_name:
         center_obj = RecyclingCenter.objects.filter(name=center_name).first()
         if center_obj:
             data['center'] = center_obj.id 
     
-    # Ensure quantity is set
     if not data.get('quantity'):
         data['quantity'] = "Pending Weighing"
 
@@ -195,8 +193,6 @@ def create_pickup_request(request):
         serializer.save(user=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
-    # Print error for debugging
-    print("Serializer Error:", serializer.errors)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
@@ -243,31 +239,35 @@ def assign_collector(request, request_id):
     
     return Response({"message": f"Assigned to {collector.get_full_name()}"})
 
-# --- ADMIN VERIFY (BULLET-PROOF LOGIC) ---
+# --- ADMIN VERIFY (POINTS & REWARDS LOGIC) ---
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
 @transaction.atomic
 def admin_verify_and_pay(request, request_id):
     pickup = get_object_or_404(PickupRequest, id=request_id)
     
+    # Requirement: User must have paid the bill before verification
     if not pickup.is_paid:
         return Response({"error": "User has not paid the bill yet."}, status=400)
 
     if pickup.status == 'verified':
         return Response({"error": "Job already verified."}, status=400)
 
-    # 1. Calculate Payout
+    # 1. Driver Payout Logic
     user_paid_amount = Decimal(str(pickup.billed_amount))
     DRIVER_BASE_FEE = Decimal("100.00")
     COMMISSION_RATE = Decimal("0.20")
-    
     driver_payout = DRIVER_BASE_FEE + (user_paid_amount * COMMISSION_RATE)
 
-    # 2. Update User Points
+    # 2. User Reward Logic (UPDATED)
     earned_points = POINTS_CONFIG.get(pickup.waste_type, 10)
     
-    pickup.user.points = F('points') + earned_points
+    # Update BOTH points
+    pickup.user.redeemable_points = F('redeemable_points') + earned_points
+    pickup.user.lifetime_points = F('lifetime_points') + earned_points
     pickup.user.save() 
+    
+    # Refresh to check badge status based on lifetime_points
     pickup.user.refresh_from_db()
     pickup.user.update_badge() 
 
@@ -296,13 +296,13 @@ def admin_verify_and_pay(request, request_id):
         points_awarded=earned_points, 
         waste_type=pickup.waste_type, 
         quantity=f"{pickup.actual_quantity} kg", 
-        description="Completed"
+        description="Completed & Verified"
     )
     
     return Response({
         "message": "Verified", 
         "driver_payout": float(driver_payout),
-        "user_points": earned_points
+        "user_points_awarded": earned_points
     })
 
 @api_view(['POST'])
@@ -318,7 +318,6 @@ def reject_pickup_request(request, request_id):
         message=f"Your pickup request was rejected: {pickup.rejection_reason}",
         pickup=pickup
     )
-    
     return Response({"message": "Rejected"})
 
 @api_view(['GET'])
@@ -337,11 +336,37 @@ def toggle_user_status(request, user_id):
     user.save()
     return Response({"message": "Status updated"})
 
+# --- UPDATED: GET ALL COLLECTORS (With Real-Time Stats) ---
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def get_all_collectors(request):
     collectors = User.objects.filter(role='service_provider', is_active=True)
-    return Response(UserSerializer(collectors, many=True).data)
+    response_data = []
+    
+    for driver in collectors:
+        # Get base user data
+        driver_data = UserSerializer(driver).data
+        
+        # Calculate real-time stats
+        # We count any job that has passed the 'assigned' stage (collected, paid, or verified)
+        job_count = PickupRequest.objects.filter(
+            collector=driver,
+            status__in=['collected', 'verified', 'paid']
+        ).count()
+        
+        # Calculate total weight (sum actual_quantity)
+        total_weight = PickupRequest.objects.filter(
+            collector=driver,
+            status__in=['collected', 'verified', 'paid']
+        ).aggregate(Sum('actual_quantity'))['actual_quantity__sum'] or 0
+        
+        # Inject into response
+        driver_data['completed_jobs_count'] = job_count
+        driver_data['total_weight_kg'] = total_weight
+        
+        response_data.append(driver_data)
+        
+    return Response(response_data)
 
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
@@ -389,11 +414,12 @@ def get_collector_history(request):
     history = PickupRequest.objects.filter(collector=request.user, status__in=['paid', 'verified']).order_by('-scheduled_date')
     return Response(PickupRequestSerializer(history, many=True).data)
 
-# --- 6. PAYMENTS & WALLET ---
+# --- 6. PAYMENTS & REWARDS (NEW LOGIC) ---
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def initiate_payment(request):
+    # This handles the USER PAYING THE BILL (Bill -> System)
     pickup = get_object_or_404(PickupRequest, id=request.data.get('pickup_id'), user=request.user)
     
     if pickup.billed_amount <= 0:
@@ -403,79 +429,143 @@ def initiate_payment(request):
         return Response({"error": "This bill is already paid."}, status=400)
 
     amount_to_pay = float(pickup.billed_amount)
+    # Mocking M-Pesa Transaction
     trans_code = f"MPESA-{uuid.uuid4().hex[:8].upper()}"
-    
-    Payment.objects.create(
-        user=request.user, 
-        pickup_request=pickup, 
-        transaction_code=trans_code, 
-        amount=amount_to_pay, 
-        phone_number=request.data.get('phone', request.user.phone), 
-        status='completed'
-    )
     
     pickup.is_paid = True
     pickup.save()
 
-    return Response({"message": "Payment Successful", "status": "completed", "amount": amount_to_pay})
+    return Response({"message": "Payment Successful", "status": "completed", "amount": amount_to_pay, "code": trans_code})
 
-# --- FIXED: HYBRID WALLET CHECK ---
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def redeem_points(request):
+    # NEW: Converts Points -> Cash in Wallet
+    user = request.user
+    
+    if user.redeemable_points < 1000:
+        return Response({"error": f"Insufficient points. You need 1000, you have {user.redeemable_points}"}, status=400)
+    
+    # 1. Deduct Points
+    user.redeemable_points = F('redeemable_points') - 1000
+    user.save()
+    
+    # 2. Add Cash to Wallet
+    reward_amount = Decimal("300.00")
+    wallet, _ = Wallet.objects.get_or_create(user=user)
+    wallet.balance = F('balance') + reward_amount
+    wallet.save()
+    
+    # 3. Log Transaction
+    WalletTransaction.objects.create(
+        wallet=wallet,
+        transaction_type='redemption',
+        amount=reward_amount,
+        status='completed',
+        description="Redeemed 1000 points for KES 300"
+    )
+    
+    # Refresh to get new values
+    user.refresh_from_db()
+    wallet.refresh_from_db()
+    
+    return Response({
+        "message": "Redemption Successful!",
+        "new_points_balance": user.redeemable_points,
+        "wallet_balance": wallet.balance
+    })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def withdraw_cash(request):
+    # NEW: Withdraws Wallet Cash -> M-Pesa
+    user = request.user
+    amount = Decimal(request.data.get('amount', 0))
+    phone = request.data.get('phone', user.phone)
+    
+    if amount < 100:
+        return Response({"error": "Minimum withdrawal is KES 100"}, status=400)
+        
+    wallet, _ = Wallet.objects.get_or_create(user=user)
+    
+    if wallet.balance < amount:
+        return Response({"error": "Insufficient wallet balance"}, status=400)
+        
+    # 1. Deduct from Wallet
+    wallet.balance = F('balance') - amount
+    wallet.save()
+    
+    # 2. Log Transaction
+    WalletTransaction.objects.create(
+        wallet=wallet,
+        transaction_type='withdrawal',
+        amount=amount,
+        status='completed', # In real app, this would be 'pending' until M-Pesa callback
+        description=f"Withdrawal to {phone}"
+    )
+    
+    return Response({"message": f"Withdrawal of KES {amount} sent to {phone}."})
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_driver_wallet(request):
     if request.user.role != 'service_provider':
         return Response({"error": "Unauthorized"}, status=403)
     
-    # --- DEBUGGING ---
-    print(f"\n--- WALLET REQUEST START ---")
-    print(f"User: {request.user.email} (ID: {request.user.id})")
-    
-    # 1. Real-Time Calculation
-    # Includes verified, paid, and collected+paid jobs
+    # 1. Get Completed Jobs (For History Table)
     completed_jobs = PickupRequest.objects.filter(
-        collector=request.user
-    ).filter(
-        Q(status='verified') | Q(status='paid') | (Q(status='collected') & Q(is_paid=True))
+        collector=request.user,
+        status__in=['verified', 'paid'] 
+    ).order_by('-scheduled_date')
+
+    # 2. Get Pending Jobs (For Orange Pending Box)
+    pending_jobs = PickupRequest.objects.filter(
+        collector=request.user,
+        status='collected',
+        is_paid=False 
     )
-    
-    total_billed = completed_jobs.aggregate(Sum('billed_amount'))['billed_amount__sum'] or 0.0
-    base_pay = 100.0 * completed_jobs.count()
-    commission = float(total_billed) * 0.20
-    calculated_total = base_pay + commission
-    
-    # 2. Stored DB Value (The Safety Net)
+
+    # 3. Calculate Pending Amount Live
+    pending_amount = 0.0
+    for job in pending_jobs:
+        # Base fee (100) + 20% commission
+        commission = float(job.billed_amount) * 0.20 if job.billed_amount else 0.0
+        pending_amount += 100.0 + commission
+
+    # 4. Get Stored Total from Profile
     try:
         profile = request.user.driver_profile
         stored_total = float(profile.total_earned)
-    except DriverProfile.DoesNotExist:
+    except:
+        # Create profile if missing
         profile = DriverProfile.objects.create(user=request.user)
         stored_total = 0.0
-        
-    print(f"Calculated: {calculated_total} | Stored in DB: {stored_total}")
 
-    # 3. SAFETY CHECK: Use whichever is higher
-    # This fixes the "Wallet 0" bug by trusting the database if calculation fails
-    final_total = max(calculated_total, stored_total)
+    # 5. Create Transaction List
+    transactions = PickupRequestSerializer(completed_jobs, many=True).data
+
+    # --- THE SAFETY NET ---
+    # If Stored Total > History, add "Previous Earnings" row to fix empty table
+    calculated_from_history = sum([100 + (float(j.billed_amount) * 0.2) for j in completed_jobs])
     
-    # 4. Pending
-    pending_jobs = PickupRequest.objects.filter(
-        collector=request.user, 
-        status__in=['assigned', 'collected'],
-        is_paid=False
-    )
-    pending_amount = 0.0
-    for job in pending_jobs:
-        if job.billed_amount > 0:
-            pending_amount += 100.0 + (float(job.billed_amount) * 0.20)
-
-    # 5. History
-    transactions = PickupRequestSerializer(completed_jobs.order_by('-scheduled_date'), many=True).data
-
-    print(f"Returning Final Wallet Balance: {final_total}")
-    print(f"--- WALLET REQUEST END ---\n")
+    if stored_total > calculated_from_history:
+        diff = stored_total - calculated_from_history
+        # Avoid tiny floating point diffs
+        if diff > 1.0: 
+            transactions.insert(0, {
+                "id": "MIGRATE",
+                "waste_type": "Previous Earnings",
+                "region": "System Migration",
+                "scheduled_date": timezone.now(),
+                "billed_amount": (diff - 100) / 0.2, # Rough estimate for display
+                "status": "verified",
+                "user_full_name": "System"
+            })
 
     return Response({
-        "total_earned": round(final_total, 2),
+        "total_earned": round(stored_total, 2),
         "pending_amount": round(pending_amount, 2),
         "currency": "KES",
         "transactions": transactions
