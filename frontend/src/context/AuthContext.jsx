@@ -7,18 +7,16 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Check login status on mount
   useEffect(() => {
     const checkUserLoggedIn = async () => {
-      // 1. Look for the correct key name "access_token"
       const token = localStorage.getItem("access_token");
-
       if (token) {
         try {
           const res = await api.get("/users/profile/");
           setUser(res.data || res);
         } catch (error) {
           console.error("Auth Check Failed:", error);
-          // 2. Clear the correct keys on failure
           localStorage.removeItem("access_token");
           localStorage.removeItem("refresh_token");
           setUser(null);
@@ -29,33 +27,44 @@ export const AuthProvider = ({ children }) => {
     checkUserLoggedIn();
   }, []);
 
-  const login = async (email, password) => {
-    const res = await api.post("/users/auth/login/", { email, password });
-    const data = res.data || res;
+  // Login Function
+  const login = async (emailOrUsername, password) => {
+    // FIX: Send BOTH 'username' and 'email' keys.
+    // This effectively "shotguns" the backend: if it wants a username, it gets it.
+    // If it wants an email, it gets that too.
+    const payload = {
+      username: emailOrUsername,
+      email: emailOrUsername,
+      password: password,
+    };
 
-    if (!data.access) {
-      throw new Error("Login failed: No access token received.");
-    }
+    try {
+      const res = await api.post("/users/auth/login/", payload);
+      const data = res.data || res;
 
-    // 3. Save tokens with the names api.js expects
-    localStorage.setItem("access_token", data.access);
+      if (!data.access) {
+        throw new Error("Login succeeded but no access token was returned.");
+      }
 
-    if (data.refresh) {
-      localStorage.setItem("refresh_token", data.refresh);
-    } else {
-      console.warn("Backend did not send a refresh token!");
-    }
+      // Save tokens
+      localStorage.setItem("access_token", data.access);
+      if (data.refresh) localStorage.setItem("refresh_token", data.refresh);
 
-    // 4. Update State & RETURN THE USER OBJECT (Critical Fix)
-    if (data.user) {
-      setUser(data.user);
-      return data.user; // <--- Returns user object to Login.jsx
-    } else {
-      // Fallback: fetch profile if login response didn't include user data
-      const profileRes = await api.get("/users/profile/");
-      const userData = profileRes.data || profileRes;
-      setUser(userData);
-      return userData; // <--- Returns user object to Login.jsx
+      // Set User State
+      if (data.user) {
+        setUser(data.user);
+        return data.user;
+      } else {
+        // Fallback: If login endpoint didn't return user data, fetch profile
+        const profileRes = await api.get("/users/profile/");
+        const userData = profileRes.data || profileRes;
+        setUser(userData);
+        return userData;
+      }
+    } catch (error) {
+      // Retrow error so Login.jsx can display the specific message
+      console.error("Login Context Error:", error.response?.data);
+      throw error;
     }
   };
 
@@ -63,6 +72,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     setUser(null);
+    window.location.href = "/login";
   };
 
   return (

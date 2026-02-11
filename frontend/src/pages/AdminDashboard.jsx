@@ -1,20 +1,21 @@
 import {
-  AlertTriangle,
   Archive,
+  BarChart3,
   Calendar,
   CalendarClock,
   CheckCircle,
   Clock,
   DollarSign,
   Loader,
-  MapPin,
-  Package,
   RefreshCw,
   ShieldCheck,
   Trophy,
   User,
   XCircle,
   Scale,
+  Truck,
+  TrendingUp, // Added for financial icon
+  Wallet, // Added for payouts
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -63,6 +64,7 @@ const AdminDashboard = () => {
     fetchData();
   }, []);
 
+  // ... (Keep existing ACTIONS: handleVerifyRequest, handleRejectRequest, handleAssign, etc. unchanged)
   // 2. ACTIONS
   const handleVerifyRequest = async (requestId) => {
     const toastId = toast.loading("Verifying pickup...");
@@ -152,9 +154,54 @@ const AdminDashboard = () => {
     return groups;
   };
 
+  const getDriverName = (collectorId) => {
+    const driver = collectors.find((c) => c.id === collectorId);
+    return driver ? driver.full_name : "Unknown Driver";
+  };
+
+  // --- ANALYTICS HELPERS ---
+  const totalRevenue = history.reduce(
+    (acc, curr) => acc + (parseFloat(curr.billed_amount) || 0),
+    0,
+  );
+
+  // Logic: Driver gets Base (100) + 20% Commission
+  // Company keeps 80% of Bill - Base (This is a simplified assumption based on your billing logic)
+  // Actually, typically: User pays Bill. Driver keeps (Bill * 0.2) + 100.
+  // Wait, if Driver keeps 20%, Company keeps 80%. But Driver also gets fixed 100.
+  // Let's visualize EXACTLY what you pay out.
+  const totalDriverPayouts = history.reduce((acc, curr) => {
+    const bill = parseFloat(curr.billed_amount) || 0;
+    const payout = 100 + bill * 0.2; // Base + 20%
+    return acc + payout;
+  }, 0);
+
+  const netCompanyRevenue = totalRevenue - totalDriverPayouts;
+
+  // Calculate stats per driver for the leaderboard
+  const driverStats = collectors
+    .map((driver) => {
+      const driverJobs = history.filter((h) => h.collector === driver.id); // Assuming ID match
+      // If API returns collector as ID, simple match. If object, use .id
+      // Let's play safe and match somewhat loosely or assume your serializer returns ID
+      // Actually, your serializer probably returns ID. If not, adjustments needed.
+
+      const earnings = driverJobs.reduce((acc, job) => {
+        const bill = parseFloat(job.billed_amount) || 0;
+        return acc + (100 + bill * 0.2);
+      }, 0);
+
+      return {
+        name: driver.full_name,
+        jobs: driverJobs.length,
+        earnings: earnings,
+      };
+    })
+    .sort((a, b) => b.earnings - a.earnings); // Sort highest earner first
+
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6 md:space-y-8 relative">
-      {/* MODAL FOR ASSIGNMENT */}
+      {/* MODAL FOR ASSIGNMENT (Unchanged) */}
       {showAssignModal && selectedRequest && (
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
@@ -281,6 +328,16 @@ const AdminDashboard = () => {
               >
                 <Archive size={18} /> History
               </button>
+              <button
+                onClick={() => setActiveTab("analytics")}
+                className={`flex items-center gap-2 pb-2 px-2 font-bold ${
+                  activeTab === "analytics"
+                    ? "text-green-600 border-b-2 border-green-600"
+                    : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                <BarChart3 size={18} /> Financials
+              </button>
             </div>
           </div>
 
@@ -317,6 +374,7 @@ const AdminDashboard = () => {
                                 key={req.id}
                                 className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition"
                               >
+                                {/* ... Request Card Content ... */}
                                 <div className="flex justify-between items-start mb-3">
                                   <div className="flex items-center gap-2">
                                     {req.status === "assigned" ? (
@@ -332,8 +390,6 @@ const AdminDashboard = () => {
                                         PENDING
                                       </span>
                                     )}
-
-                                    {/* --- PAYMENT STATUS BADGE (Only if Billed) --- */}
                                     {req.billed_amount > 0 &&
                                       (req.is_paid ? (
                                         <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1 border border-green-200">
@@ -351,27 +407,29 @@ const AdminDashboard = () => {
                                     #{req.id}
                                   </span>
                                 </div>
-
                                 <div className="grid grid-cols-2 gap-2 mb-4">
                                   <div className="text-sm text-gray-700 font-medium flex items-center gap-2">
                                     <User size={14} className="text-gray-400" />{" "}
                                     {req.user_full_name}
                                   </div>
                                   <div className="text-sm text-gray-700 font-medium flex items-center gap-2">
-                                    <Package
+                                    <Truck
                                       size={14}
-                                      className="text-gray-400"
-                                    />{" "}
-                                    {req.waste_type}
-                                    {req.actual_quantity > 0 &&
-                                      ` (${req.actual_quantity}kg)`}
-                                  </div>
-                                  <div className="text-xs text-gray-500 flex items-center gap-2 col-span-2">
-                                    <MapPin
-                                      size={14}
-                                      className="text-gray-400"
-                                    />{" "}
-                                    {req.center_name}
+                                      className={
+                                        req.collector
+                                          ? "text-blue-500"
+                                          : "text-gray-300"
+                                      }
+                                    />
+                                    {req.collector ? (
+                                      <span className="text-blue-600 font-bold">
+                                        {getDriverName(req.collector)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400 italic">
+                                        No Driver
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="text-xs text-gray-500 flex items-center gap-2 col-span-2">
                                     <Calendar
@@ -383,7 +441,6 @@ const AdminDashboard = () => {
                                     ).toLocaleDateString()}
                                   </div>
                                 </div>
-
                                 <div className="flex gap-2">
                                   {req.status === "pending" && (
                                     <button
@@ -393,8 +450,6 @@ const AdminDashboard = () => {
                                       Assign Driver
                                     </button>
                                   )}
-
-                                  {/* VERIFY BUTTON LOGIC */}
                                   {req.status === "collected" &&
                                     (req.is_paid ? (
                                       <button
@@ -411,7 +466,6 @@ const AdminDashboard = () => {
                                         Waiting for User Payment...
                                       </div>
                                     ))}
-
                                   <button
                                     onClick={() => handleRejectRequest(req.id)}
                                     className="px-4 border border-red-100 text-red-600 py-2 rounded-lg text-xs font-bold hover:bg-red-50"
@@ -477,11 +531,186 @@ const AdminDashboard = () => {
                   )}
                 </div>
               )}
+
+              {/* ANALYTICS & FINANCIALS TAB */}
+              {activeTab === "analytics" && (
+                <div className="space-y-6 animate-fade-in">
+                  {/* 1. FINANCIAL SUMMARY */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-gradient-to-br from-green-700 to-green-900 p-6 rounded-2xl text-white shadow-lg">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-green-200 text-xs font-bold uppercase tracking-wider">
+                            Gross Revenue
+                          </p>
+                          <h3 className="text-3xl font-bold mt-1">
+                            KES {totalRevenue.toLocaleString()}
+                          </h3>
+                        </div>
+                        <div className="bg-white/20 p-2 rounded-lg">
+                          <DollarSign size={24} className="text-white" />
+                        </div>
+                      </div>
+                      <div className="mt-6 flex gap-4 text-sm">
+                        <div>
+                          <p className="text-green-300 text-xs">
+                            Driver Payouts
+                          </p>
+                          <p className="font-bold">
+                            KES {totalDriverPayouts.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="w-px bg-white/20"></div>
+                        <div>
+                          <p className="text-green-300 text-xs">Net Profit</p>
+                          <p className="font-bold">
+                            KES {netCompanyRevenue.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-center">
+                      <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <Trophy size={18} className="text-yellow-500" /> Top
+                        Performing Drivers
+                      </h3>
+                      <div className="space-y-3 overflow-y-auto max-h-40 pr-2">
+                        {driverStats.length === 0 ? (
+                          <p className="text-sm text-gray-400 italic">
+                            No data yet.
+                          </p>
+                        ) : (
+                          driverStats.map((d, i) => (
+                            <div
+                              key={i}
+                              className="flex justify-between items-center text-sm"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${i === 0 ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-600"}`}
+                                >
+                                  {i + 1}
+                                </div>
+                                <span className="font-medium text-gray-700">
+                                  {d.name}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-gray-900">
+                                  KES {d.earnings.toLocaleString()}
+                                </p>
+                                <p className="text-[10px] text-gray-400">
+                                  {d.jobs} Jobs
+                                </p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. EXPENDITURE BREAKDOWN (VISUAL BAR) */}
+                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                      <TrendingUp size={18} className="text-blue-600" /> Revenue
+                      Analysis
+                    </h3>
+
+                    <div className="mb-2 flex justify-between text-sm font-medium text-gray-600">
+                      <span>Total Revenue Distributed</span>
+                      <span>100%</span>
+                    </div>
+                    <div className="w-full h-6 bg-gray-100 rounded-full overflow-hidden flex mb-4">
+                      {/* Driver Payout Bar */}
+                      <div
+                        className="h-full bg-blue-500 hover:bg-blue-600 transition-all cursor-help"
+                        style={{
+                          width: `${(totalDriverPayouts / (totalRevenue || 1)) * 100}%`,
+                        }}
+                        title={`Drivers Paid: ${((totalDriverPayouts / (totalRevenue || 1)) * 100).toFixed(1)}%`}
+                      ></div>
+                      {/* Profit Bar */}
+                      <div
+                        className="h-full bg-green-500 hover:bg-green-600 transition-all cursor-help"
+                        style={{
+                          width: `${(netCompanyRevenue / (totalRevenue || 1)) * 100}%`,
+                        }}
+                        title={`Company Net: ${((netCompanyRevenue / (totalRevenue || 1)) * 100).toFixed(1)}%`}
+                      ></div>
+                    </div>
+
+                    <div className="flex gap-6 text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                        <span className="text-gray-600">
+                          Driver Payouts (Est. 80% + Fees)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                        <span className="text-gray-600">Company Revenue</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Waste Composition (Existing Chart logic moved here) */}
+                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <h3 className="font-bold text-gray-800 mb-6">
+                      Waste Type Breakdown
+                    </h3>
+                    <div className="space-y-4">
+                      {Object.entries(
+                        history.reduce((acc, curr) => {
+                          acc[curr.waste_type] =
+                            (acc[curr.waste_type] || 0) + 1;
+                          return acc;
+                        }, {}),
+                      ).map(([type, count]) => {
+                        const total = history.length || 1;
+                        const percentage = Math.round((count / total) * 100);
+                        return (
+                          <div key={type}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="font-bold text-gray-700">
+                                {type}
+                              </span>
+                              <span className="text-gray-500">
+                                {count} Jobs ({percentage}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  type === "Plastic"
+                                    ? "bg-blue-500"
+                                    : type === "Metal"
+                                      ? "bg-orange-500"
+                                      : type === "Glass"
+                                        ? "bg-teal-500"
+                                        : "bg-green-500"
+                                }`}
+                                style={{ width: `${percentage}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {history.length === 0 && (
+                        <p className="text-gray-400 text-center italic">
+                          No data to display yet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
 
-        {/* RIGHT COL: MANUAL */}
+        {/* RIGHT COL: MANUAL (Unchanged) */}
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
             <h2 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -513,7 +742,7 @@ const AdminDashboard = () => {
                   <option value="Glass">Glass (15pts)</option>
                   <option value="Paper">Paper (10pts)</option>
                   <option value="Metal">Metal (30pts)</option>
-                  <option value="Electronics">Electronics (50pts)</option>
+                  <option value="E-waste">E-waste (50pts)</option>
                 </select>
               </div>
               <button

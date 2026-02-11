@@ -14,10 +14,14 @@ import {
   Package,
   RefreshCw,
   Scale,
+  ShieldCheck,
   TrendingUp,
   Truck,
+  User,
   Wallet,
   X,
+  Phone,
+  Mail,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -30,60 +34,67 @@ const CollectorDashboard = () => {
   const [activeTab, setActiveTab] = useState("active");
   const [jobs, setJobs] = useState([]);
   const [history, setHistory] = useState([]);
+
   const [wallet, setWallet] = useState({
     total_earned: 0,
     pending_amount: 0,
     transactions: [],
   });
+
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [driverProfile, setDriverProfile] = useState(null);
 
   const NAIROBI_CENTER = [-1.2921, 36.8219];
 
-  // --- ROBUST DATA FETCHING ---
+  // --- DATA FETCHING ---
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch Jobs
+      // 1. Jobs
       try {
         const jobRes = await api.get("/users/collector/jobs/");
         const jobData = jobRes.data ? jobRes.data : jobRes;
         setJobs(Array.isArray(jobData) ? jobData : []);
       } catch (err) {
-        console.error("❌ Jobs Error:", err);
+        console.error("Jobs Error", err);
       }
 
-      // 2. Fetch History
+      // 2. History
       try {
         const histRes = await api.get("/users/collector/history/");
         const histData = histRes.data ? histRes.data : histRes;
         setHistory(Array.isArray(histData) ? histData : []);
       } catch (err) {
-        console.error("❌ History Error:", err);
+        console.error("History Error", err);
       }
 
-      // 3. Fetch Wallet
+      // 3. Wallet (Transactions)
       try {
         const walletRes = await api.get("/users/driver/wallet/");
         const walletData = walletRes.data || walletRes;
-        if (walletData && typeof walletData.total_earned !== "undefined") {
-          setWallet(walletData);
+        if (walletData) {
+          setWallet({
+            total_earned: walletData.total_earned || 0,
+            pending_amount: walletData.pending_amount || 0,
+            transactions: Array.isArray(walletData.transactions)
+              ? walletData.transactions
+              : [],
+          });
         }
       } catch (err) {
-        console.error("❌ Wallet Error:", err);
+        console.error("Wallet Error", err);
       }
 
-      // 4. Fetch Profile
+      // 4. Profile
       try {
         const profileRes = await api.get("/users/profile/");
-        const profileData = profileRes.data || profileRes;
-        setDriverProfile(profileData.driver_profile || {});
+        setDriverProfile(profileRes.data || profileRes);
       } catch (err) {
-        console.error(err);
+        console.error("Profile Error", err);
       }
     } catch (error) {
-      console.error("Global Fetch Error:", error);
+      console.error("Global Fetch Error", error);
     }
     setLoading(false);
   };
@@ -112,16 +123,14 @@ const CollectorDashboard = () => {
       "0",
     );
     if (!weightStr) return;
-
     const weight = parseFloat(weightStr);
-    if (isNaN(weight) || weight <= 0) {
-      return toast.error("Please enter a valid weight greater than 0");
-    }
+    if (isNaN(weight) || weight <= 0)
+      return toast.error("Please enter a valid weight");
 
     try {
-      const toastId = toast.loading("Sending bill to user...");
+      const toastId = toast.loading("Sending bill...");
       await api.patch(`/users/driver/bill-job/${id}/`, { weight });
-      toast.success("Bill sent! Waiting for user payment.", { id: toastId });
+      toast.success("Bill sent!", { id: toastId });
       fetchData();
     } catch (error) {
       toast.error("Failed to submit bill");
@@ -136,8 +145,9 @@ const CollectorDashboard = () => {
         new Date(a.assigned_at || a.created_at),
     );
     sorted.forEach((item) => {
-      const dateRaw = item.assigned_at || item.created_at;
-      const dateStr = new Date(dateRaw).toLocaleDateString("en-US", {
+      const dateStr = new Date(
+        item.assigned_at || item.created_at,
+      ).toLocaleDateString("en-US", {
         weekday: "short",
         month: "short",
         day: "numeric",
@@ -146,6 +156,12 @@ const CollectorDashboard = () => {
       groups[dateStr].push(item);
     });
     return groups;
+  };
+
+  // Helper to calculate earnings per job row
+  const calculateEarnings = (billed_amount) => {
+    if (!billed_amount) return 0;
+    return 100 + parseFloat(billed_amount) * 0.2;
   };
 
   const SidebarItem = ({ id, label, icon: Icon }) => (
@@ -177,7 +193,6 @@ const CollectorDashboard = () => {
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
-
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-800 border-r border-gray-700 shadow-2xl md:shadow-none transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
@@ -198,7 +213,6 @@ const CollectorDashboard = () => {
               <X size={24} />
             </button>
           </div>
-
           <div className="p-6 pb-2">
             <div className="flex items-center gap-3 bg-gray-900 p-3 rounded-xl border border-gray-700 shadow-inner">
               <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-green-400 font-bold border border-gray-600">
@@ -214,11 +228,7 @@ const CollectorDashboard = () => {
               </div>
             </div>
           </div>
-
           <nav className="flex-1 px-4 space-y-2 mt-4">
-            <div className="text-xs font-bold text-gray-500 uppercase px-2 mb-2 tracking-wider">
-              Menu
-            </div>
             <SidebarItem
               id="active"
               label="Active Tasks"
@@ -226,8 +236,8 @@ const CollectorDashboard = () => {
             />
             <SidebarItem id="wallet" label="Wallet & Earnings" icon={Wallet} />
             <SidebarItem id="history" label="Job History" icon={Archive} />
+            <SidebarItem id="profile" label="My Profile" icon={User} />
           </nav>
-
           <div className="p-4 border-t border-gray-700 space-y-2 bg-gray-800">
             <button
               onClick={fetchData}
@@ -256,22 +266,13 @@ const CollectorDashboard = () => {
               <Menu size={24} />
             </button>
             <h1 className="text-lg md:text-xl font-bold text-gray-800 flex items-center gap-2">
-              {activeTab === "active" && (
-                <>
-                  <Clock className="text-green-600" size={20} /> Active
-                  Assignments
-                </>
-              )}
-              {activeTab === "wallet" && (
-                <>
-                  <Wallet className="text-green-600" size={20} /> My Wallet
-                </>
-              )}
-              {activeTab === "history" && (
-                <>
-                  <Archive className="text-green-600" size={20} /> Job History
-                </>
-              )}
+              {activeTab === "active"
+                ? "Active Assignments"
+                : activeTab === "wallet"
+                  ? "My Wallet"
+                  : activeTab === "history"
+                    ? "Job History"
+                    : "My Profile"}
             </h1>
           </div>
         </header>
@@ -314,12 +315,8 @@ const CollectorDashboard = () => {
                                   <thead className="bg-gray-50 border-b border-gray-100 text-xs uppercase text-gray-500 font-bold tracking-wider">
                                     <tr>
                                       <th className="p-4">Customer</th>
-                                      <th className="p-4">Waste Info</th>
-                                      <th className="p-4">Location</th>
-                                      <th className="p-4">Pickup Date</th>
-                                      <th className="p-4 text-center">
-                                        Actions
-                                      </th>
+                                      <th className="p-4">Details</th>
+                                      <th className="p-4">Action</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
@@ -332,71 +329,34 @@ const CollectorDashboard = () => {
                                         >
                                           <td className="p-4">
                                             <div className="flex items-center gap-3">
-                                              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-xs">
+                                              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
                                                 {job.user_full_name?.[0]}
                                               </div>
                                               <div>
                                                 <p className="font-bold text-gray-900 text-sm">
                                                   {job.user_full_name}
                                                 </p>
-                                                <p className="text-xs text-gray-400">
-                                                  #{job.id}
+                                                <p className="text-xs text-gray-500 flex items-center gap-1">
+                                                  <MapPin size={10} />{" "}
+                                                  {job.region}
                                                 </p>
                                               </div>
                                             </div>
                                           </td>
                                           <td className="p-4">
-                                            <div className="flex items-center gap-2 text-sm text-gray-700">
-                                              <Package
-                                                size={16}
-                                                className="text-blue-500"
-                                              />
-                                              <span>{job.waste_type}</span>
-                                            </div>
-                                            <div className="ml-6 flex flex-col">
-                                              {/* ACTIVE TAB LOGIC */}
-                                              <span className="text-xs font-bold text-gray-500">
-                                                {job.actual_quantity > 0
-                                                  ? `${job.actual_quantity} kg`
-                                                  : job.quantity}
+                                            <div className="flex flex-col gap-1">
+                                              <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded w-fit">
+                                                {job.waste_type}
                                               </span>
-                                              {job.billed_amount > 0 && (
-                                                <span className="text-xs font-bold text-green-600 bg-green-50 px-1 rounded w-fit mt-1">
-                                                  Bill: KES {job.billed_amount}
-                                                </span>
-                                              )}
+                                              <span className="text-xs text-gray-500">
+                                                {new Date(
+                                                  job.scheduled_date,
+                                                ).toLocaleDateString()}
+                                              </span>
                                             </div>
                                           </td>
                                           <td className="p-4">
-                                            <div className="max-w-[200px]">
-                                              <div className="flex items-start gap-1 text-sm text-gray-800">
-                                                <MapPin
-                                                  size={14}
-                                                  className="text-red-500 mt-1 shrink-0"
-                                                />
-                                                <span className="truncate">
-                                                  {job.region}
-                                                </span>
-                                              </div>
-                                              <p className="text-xs text-gray-400 pl-5 truncate">
-                                                {job.pickup_address ||
-                                                  "No address"}
-                                              </p>
-                                            </div>
-                                          </td>
-                                          <td className="p-4">
-                                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                                              <Calendar
-                                                size={14}
-                                                className="text-orange-500"
-                                              />
-                                              {new Date(
-                                                job.scheduled_date,
-                                              ).toLocaleDateString()}
-                                            </div>
-                                          </td>
-                                          <td className="p-4">
-                                            <div className="flex items-center justify-center gap-2">
+                                            <div className="flex gap-2">
                                               <button
                                                 onClick={() =>
                                                   openGoogleMaps(
@@ -404,7 +364,7 @@ const CollectorDashboard = () => {
                                                     coords[1],
                                                   )
                                                 }
-                                                className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition"
+                                                className="p-2 bg-blue-50 text-blue-600 rounded-lg"
                                               >
                                                 <Navigation size={18} />
                                               </button>
@@ -413,16 +373,10 @@ const CollectorDashboard = () => {
                                                   onClick={() =>
                                                     handleBillUser(job.id)
                                                   }
-                                                  className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition shadow-sm"
+                                                  className="px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-bold"
                                                 >
-                                                  <Scale size={14} /> Weigh &
-                                                  Bill
+                                                  Weigh
                                                 </button>
-                                              )}
-                                              {job.status === "collected" && (
-                                                <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded border border-orange-200">
-                                                  Wait for Pay
-                                                </span>
                                               )}
                                             </div>
                                           </td>
@@ -440,49 +394,48 @@ const CollectorDashboard = () => {
                   </div>
                 )}
 
-                {/* WALLET TAB */}
+                {/* WALLET TAB (With Payment Transactions) */}
                 {activeTab === "wallet" && (
                   <div className="space-y-6 animate-in fade-in duration-500">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="bg-gradient-to-br from-green-600 to-green-700 p-6 rounded-2xl text-white shadow-lg shadow-green-200">
+                      <div className="bg-gradient-to-br from-green-600 to-green-700 p-6 rounded-2xl text-white shadow-lg">
                         <div className="flex justify-between items-start mb-4">
                           <div className="bg-white/20 p-2 rounded-lg">
                             <Wallet className="text-white" size={24} />
                           </div>
                           <span className="bg-green-800/50 text-xs font-bold px-2 py-1 rounded text-green-100">
-                            Available
+                            Verified
                           </span>
                         </div>
                         <p className="text-green-100 text-sm font-medium mb-1">
-                          Total Earned (Verified)
+                          Total Earned
                         </p>
                         <h2 className="text-4xl font-bold">
                           KES {wallet.total_earned}
                         </h2>
                       </div>
-                      <div className="bg-white p-6 rounded-2xl border border-orange-200 shadow-sm relative overflow-hidden">
-                        <div className="relative z-10">
-                          <div className="flex justify-between items-start mb-4">
-                            <div className="bg-orange-100 p-2 rounded-lg">
-                              <AlertCircle
-                                className="text-orange-600"
-                                size={24}
-                              />
-                            </div>
-                            <span className="bg-orange-100 text-xs font-bold px-2 py-1 rounded text-orange-600">
-                              Pending
-                            </span>
+                      <div className="bg-white p-6 rounded-2xl border border-orange-200 shadow-sm">
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="bg-orange-100 p-2 rounded-lg">
+                            <AlertCircle
+                              className="text-orange-600"
+                              size={24}
+                            />
                           </div>
-                          <p className="text-gray-500 text-sm font-medium mb-1">
-                            Pending Clearance
-                          </p>
-                          <h2 className="text-4xl font-bold text-gray-800">
-                            KES {wallet.pending_amount}
-                          </h2>
+                          <span className="bg-orange-100 text-xs font-bold px-2 py-1 rounded text-orange-600">
+                            Pending
+                          </span>
                         </div>
+                        <p className="text-gray-500 text-sm font-medium mb-1">
+                          Pending Clearance
+                        </p>
+                        <h2 className="text-4xl font-bold text-gray-800">
+                          KES {wallet.pending_amount}
+                        </h2>
                       </div>
                     </div>
-                    {/* Transaction History */}
+
+                    {/* PAYMENT HISTORY TABLE */}
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                       <div className="p-6 border-b border-gray-100">
                         <h3 className="font-bold text-gray-800 flex items-center gap-2">
@@ -496,12 +449,12 @@ const CollectorDashboard = () => {
                             <tr>
                               <th className="p-4">Date</th>
                               <th className="p-4">Job Info</th>
-                              <th className="p-4">Amount</th>
+                              <th className="p-4">Earnings</th>
                               <th className="p-4">Status</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                            {wallet.transactions.length === 0 ? (
+                            {wallet.transactions?.length === 0 ? (
                               <tr>
                                 <td
                                   colSpan="4"
@@ -511,7 +464,7 @@ const CollectorDashboard = () => {
                                 </td>
                               </tr>
                             ) : (
-                              wallet.transactions.map((txn) => (
+                              wallet.transactions?.map((txn) => (
                                 <tr
                                   key={txn.id}
                                   className="hover:bg-gray-50 transition"
@@ -523,14 +476,21 @@ const CollectorDashboard = () => {
                                   </td>
                                   <td className="p-4">
                                     <p className="text-sm font-bold text-gray-800">
-                                      Pickup #{txn.id}
+                                      {txn.id === "MIGRATE"
+                                        ? "Balance Adjustment"
+                                        : `Pickup #${txn.id}`}
                                     </p>
                                     <p className="text-xs text-gray-500">
                                       {txn.waste_type} - {txn.region}
                                     </p>
                                   </td>
                                   <td className="p-4 text-green-600 font-bold">
-                                    + KES {100 + txn.billed_amount * 0.2}
+                                    + KES{" "}
+                                    {txn.id === "MIGRATE"
+                                      ? txn.billed_amount
+                                      : calculateEarnings(
+                                          txn.billed_amount,
+                                        ).toFixed(2)}
                                   </td>
                                   <td className="p-4">
                                     <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">
@@ -547,7 +507,7 @@ const CollectorDashboard = () => {
                   </div>
                 )}
 
-                {/* HISTORY TAB */}
+                {/* --- SIMPLIFIED JOB HISTORY TAB (Work Log) --- */}
                 {activeTab === "history" && (
                   <div className="space-y-4 animate-in fade-in duration-500">
                     {history.length === 0 ? (
@@ -555,43 +515,180 @@ const CollectorDashboard = () => {
                         No completed jobs yet.
                       </div>
                     ) : (
-                      history.map((job) => (
-                        <div
-                          key={job.id}
-                          className="bg-white p-5 rounded-2xl border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50 transition shadow-sm opacity-75"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-green-600">
-                              <CheckCircle size={24} />
+                      <div className="grid grid-cols-1 gap-3">
+                        {history.map((job) => {
+                          const dateObj = new Date(job.scheduled_date);
+                          return (
+                            <div
+                              key={job.id}
+                              className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4"
+                            >
+                              {/* 1. Date Block */}
+                              <div className="flex flex-col items-center justify-center bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 min-w-[70px]">
+                                <span className="text-xs font-bold text-gray-400 uppercase">
+                                  {dateObj.toLocaleString("default", {
+                                    month: "short",
+                                  })}
+                                </span>
+                                <span className="text-xl font-bold text-gray-800 leading-none mt-1">
+                                  {dateObj.getDate()}
+                                </span>
+                              </div>
+                              {/* 2. Work Info */}
+                              <div className="flex-1 border-l border-gray-100 pl-4">
+                                <h4 className="font-bold text-gray-900 text-base">
+                                  {job.user_full_name}
+                                </h4>
+                                <div className="flex items-center gap-1 text-sm text-gray-500 mt-0.5">
+                                  <MapPin size={14} className="text-gray-400" />
+                                  <span className="truncate">
+                                    {job.region || "Nairobi"}
+                                  </span>
+                                </div>
+                              </div>
+                              {/* 3. Weight Badge */}
+                              <div className="text-right">
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-green-50 text-green-700 text-xs font-bold border border-green-100">
+                                    <Scale size={12} /> {job.actual_quantity} kg
+                                  </span>
+                                  <span className="text-[10px] text-gray-400 uppercase font-medium tracking-wide">
+                                    {job.waste_type}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                            <div>
-                              <h4 className="font-bold text-gray-900">
-                                {job.user_full_name}
-                              </h4>
-                              <p className="text-sm text-gray-500">
-                                {job.waste_type} •{" "}
-                                {
-                                  // --- FIX STARTS HERE ---
-                                  // If Verified/Paid, NEVER show "Pending"
-                                  job.status === "verified" ||
-                                  job.status === "paid"
-                                    ? job.actual_quantity > 0
-                                      ? `${job.actual_quantity} kg`
-                                      : "Completed"
-                                    : job.actual_quantity > 0
-                                      ? `${job.actual_quantity} kg`
-                                      : job.quantity
-                                  // --- FIX ENDS HERE ---
-                                }
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* PROFILE TAB */}
+                {activeTab === "profile" && driverProfile && (
+                  <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-500">
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      <div className="bg-green-700 h-32 relative">
+                        <div className="absolute -bottom-12 left-8">
+                          <div className="w-24 h-24 rounded-full bg-white p-1 shadow-md">
+                            <div className="w-full h-full rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold text-3xl">
+                              {driverProfile.first_name?.[0] || "D"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="pt-16 pb-8 px-8">
+                        <div className="flex justify-between items-start mb-6">
+                          <div>
+                            <h2 className="text-2xl font-bold text-gray-900">
+                              {driverProfile.first_name}{" "}
+                              {driverProfile.last_name}
+                            </h2>
+                            <p className="text-gray-500 flex items-center gap-1">
+                              <Truck size={14} /> Service Provider
+                            </p>
+                          </div>
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-bold uppercase border ${driverProfile.driver_profile?.is_verified ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}
+                          >
+                            {driverProfile.driver_profile?.is_verified
+                              ? "Verified Driver"
+                              : "Pending Verification"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h3 className="font-bold text-gray-800 border-b pb-2">
+                              Contact Details
+                            </h3>
+                            <div className="flex items-center gap-3 text-gray-600">
+                              <div className="p-2 bg-gray-50 rounded-lg">
+                                <Mail size={18} />
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400">
+                                  Email Address
+                                </p>
+                                <p className="font-medium">
+                                  {driverProfile.email}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 text-gray-600">
+                              <div className="p-2 bg-gray-50 rounded-lg">
+                                <Phone size={18} />
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400">
+                                  Phone Number
+                                </p>
+                                <p className="font-medium">
+                                  {driverProfile.phone || "N/A"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-4">
+                            <h3 className="font-bold text-gray-800 border-b pb-2">
+                              Driver Stats
+                            </h3>
+                            <div className="flex items-center gap-3 text-gray-600">
+                              <div className="p-2 bg-gray-50 rounded-lg">
+                                <Wallet size={18} />
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400">
+                                  Total Earned
+                                </p>
+                                <p className="font-medium">
+                                  KES {wallet.total_earned}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 text-gray-600">
+                              <div className="p-2 bg-gray-50 rounded-lg">
+                                <Archive size={18} />
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400">
+                                  Total Jobs
+                                </p>
+                                <p className="font-medium">
+                                  {history.length} Completed
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-8 pt-6 border-t border-gray-100">
+                          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <ShieldCheck size={18} className="text-blue-600" />{" "}
+                            Legal Documents
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                              <p className="text-xs text-gray-400 uppercase font-bold mb-1">
+                                National ID
+                              </p>
+                              <p className="font-mono text-gray-800 font-medium">
+                                {driverProfile.driver_profile?.id_no ||
+                                  "Not Submitted"}
+                              </p>
+                            </div>
+                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                              <p className="text-xs text-gray-400 uppercase font-bold mb-1">
+                                Driving License
+                              </p>
+                              <p className="font-mono text-gray-800 font-medium">
+                                {driverProfile.driver_profile?.license_no ||
+                                  "Not Submitted"}
                               </p>
                             </div>
                           </div>
-                          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold uppercase border border-green-200">
-                            Verified
-                          </span>
                         </div>
-                      ))
-                    )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </>

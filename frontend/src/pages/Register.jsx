@@ -9,15 +9,16 @@ import {
   Leaf,
   Truck,
   ArrowLeft,
-  Check,
 } from "lucide-react";
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import toast from "react-hot-toast";
 import { api } from "../services/api";
+import { useAuth } from "../context/AuthContext"; // 1. Import AuthContext
 
 const Register = () => {
   const navigate = useNavigate();
+  const { login } = useAuth(); // 2. Get the login function
 
   const [formData, setFormData] = useState({
     first_name: "",
@@ -70,6 +71,7 @@ const Register = () => {
     setLoading(true);
 
     const registrationData = {
+      username: formData.email,
       email: formData.email,
       password: formData.password,
       first_name: formData.first_name,
@@ -82,9 +84,22 @@ const Register = () => {
     };
 
     try {
+      // 1. Register the user
       await api.post("/users/register/", registrationData);
-      toast.success(`Account created! Please login.`);
-      navigate("/login");
+
+      // 2. Auto-Login immediately
+      toast.success("Account created! Logging you in...");
+      const user = await login(formData.email, formData.password);
+
+      // 3. Redirect to specific dashboard based on role
+      if (user.role === "admin" || user.is_superuser) {
+        navigate("/admin", { replace: true });
+      } else if (user.role === "service_provider") {
+        navigate("/driver/dashboard", { replace: true });
+      } else {
+        // Default resident dashboard
+        navigate("/dashboard", { replace: true });
+      }
     } catch (error) {
       console.error("Registration error:", error);
       const errorData = error.response?.data;
@@ -102,243 +117,330 @@ const Register = () => {
     }
   };
 
+  // Helper functions for styling
+  const getBackgroundGradient = () => {
+    if (formData.role === "service_provider")
+      return "from-blue-700 to-cyan-800";
+    return "from-green-600 to-teal-700";
+  };
+
+  const getButtonColor = () => {
+    if (formData.role === "service_provider")
+      return "bg-blue-600 hover:bg-blue-700 shadow-blue-500/30";
+    return "bg-green-600 hover:bg-green-700 shadow-green-500/30";
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 lg:p-8">
-      {/* Main Card Container */}
-      <div className="bg-white w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden flex flex-col lg:flex-row min-h-[700px]">
-        {/* LEFT SIDE: Vibrant Visuals (CSS Only) */}
-        <div className="hidden lg:flex w-5/12 bg-gradient-to-br from-green-600 to-teal-800 relative p-12 flex-col justify-between overflow-hidden">
-          {/* Decorative Shapes */}
-          <div className="absolute top-0 left-0 w-full h-full opacity-20">
-            <div className="absolute -top-20 -left-20 w-64 h-64 bg-white rounded-full mix-blend-overlay blur-3xl"></div>
-            <div className="absolute bottom-0 right-0 w-80 h-80 bg-green-400 rounded-full mix-blend-overlay blur-3xl"></div>
+    <div
+      className={`min-h-screen flex items-center justify-center bg-gradient-to-br transition-colors duration-500 p-4 ${getBackgroundGradient()}`}
+    >
+      <div className="absolute top-0 left-0 w-full h-full opacity-10 overflow-hidden pointer-events-none">
+        <div className="absolute top-10 left-10 w-32 h-32 bg-white rounded-full mix-blend-overlay blur-xl"></div>
+        <div className="absolute bottom-20 right-10 w-64 h-64 bg-white rounded-full mix-blend-overlay blur-3xl"></div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex overflow-hidden relative z-10">
+        {/* LEFT SIDE: Decorative Panel */}
+        <div
+          className={`hidden lg:flex lg:w-5/12 relative overflow-hidden bg-gradient-to-br transition-colors duration-500 ${
+            formData.role === "service_provider"
+              ? "from-blue-50 to-cyan-100"
+              : "from-green-50 to-teal-100"
+          }`}
+        >
+          <div className="absolute top-0 left-0 w-full h-full opacity-30">
+            <div
+              className={`absolute top-1/4 left-1/4 w-32 h-32 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob ${
+                formData.role === "service_provider"
+                  ? "bg-blue-300"
+                  : "bg-green-300"
+              }`}
+            ></div>
+            <div
+              className={`absolute bottom-1/4 right-1/4 w-32 h-32 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000 ${
+                formData.role === "service_provider"
+                  ? "bg-cyan-300"
+                  : "bg-teal-300"
+              }`}
+            ></div>
           </div>
 
-          <div className="relative z-10">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 text-white/80 hover:text-white transition-colors text-sm font-medium mb-8"
-            >
-              <ArrowLeft size={16} /> Back to website
-            </Link>
-            <h2 className="text-4xl font-bold text-white mb-4 leading-tight">
-              Start Your Green <br /> Journey Today.
-            </h2>
-            <p className="text-green-100 text-lg opacity-90">
-              Join a community committed to a cleaner planet. Track, earn, and
-              make an impact.
-            </p>
-          </div>
+          <div className="relative z-10 p-10 flex flex-col justify-between h-full text-gray-800">
+            <div>
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors bg-white/50 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-medium border border-white/20 hover:bg-white/80"
+              >
+                <ArrowLeft size={14} /> Back to Home
+              </Link>
+            </div>
 
-          {/* Feature List on Left */}
-          <div className="relative z-10 space-y-4">
-            {[
-              "Earn points for every kilo recycled",
-              "Track your environmental impact",
-            ].map((item, idx) => (
-              <div key={idx} className="flex items-center gap-3 text-white/90">
-                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                  <Check size={14} />
-                </div>
-                <span className="text-sm font-medium">{item}</span>
+            <div className="mb-8">
+              <div
+                className={`inline-flex items-center justify-center w-12 h-12 bg-white rounded-xl mb-4 shadow-sm border border-gray-100 ${
+                  formData.role === "service_provider"
+                    ? "text-blue-600"
+                    : "text-green-600"
+                }`}
+              >
+                <Leaf className="w-6 h-6" />
               </div>
-            ))}
+              <h2 className="text-3xl font-bold mb-3 leading-tight text-gray-900">
+                Start Your Green <br />
+                <span
+                  className={
+                    formData.role === "service_provider"
+                      ? "text-blue-600"
+                      : "text-green-600"
+                  }
+                >
+                  Journey Today.
+                </span>
+              </h2>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {formData.role === "service_provider"
+                  ? "Join our fleet. Earn money while keeping the city clean."
+                  : "Join a community committed to a cleaner planet. Track, earn, and make an impact."}
+              </p>
+            </div>
+
+            <div className="text-xs text-gray-500">© 2025 RecycleTrack.</div>
           </div>
         </div>
 
-        {/* RIGHT SIDE: The Form */}
-        <div className="w-full lg:w-7/12 p-8 md:p-12 lg:p-16 bg-white overflow-y-auto">
-          <div className="max-w-lg mx-auto">
-            <div className="text-center lg:text-left mb-8">
-              <div className="inline-flex lg:hidden items-center justify-center w-12 h-12 bg-green-100 rounded-xl mb-4">
-                <Leaf className="w-6 h-6 text-green-600" />
-              </div>
-              <h1 className="text-3xl font-bold text-gray-900">
+        {/* RIGHT SIDE: Register Form */}
+        <div className="w-full lg:w-7/12 flex items-center justify-center p-6 lg:p-10 bg-white">
+          <div className="max-w-md w-full">
+            <div className="text-center mb-6">
+              <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">
                 Create Account
               </h1>
-              <p className="text-gray-500 mt-2">
+              <p className="text-gray-500 mt-1 text-sm">
                 Enter your details to get started.
               </p>
             </div>
 
-            {/* Role Selection - Modern Segmented Control */}
-            <div className="bg-gray-100 p-1.5 rounded-xl flex mb-8">
+            {/* ROLE TABS */}
+            <div className="bg-gray-100 p-1 rounded-lg flex mb-6">
               <button
                 type="button"
                 onClick={() => toggleRole(false)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-bold transition-all duration-200 ${
                   formData.role === "resident"
                     ? "bg-white text-green-700 shadow-sm"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                <User size={16} /> Resident
+                <User size={14} /> Resident
               </button>
               <button
                 type="button"
                 onClick={() => toggleRole(true)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-bold transition-all duration-200 ${
                   formData.role === "service_provider"
                     ? "bg-white text-blue-700 shadow-sm"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                <Truck size={16} /> Driver
+                <Truck size={14} /> Driver
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <form
+              onSubmit={handleSubmit}
+              className="space-y-4"
+              autoComplete="off"
+            >
+              {/* HIDDEN INPUTS */}
+              <input type="text" style={{ display: "none" }} />
+              <input type="password" style={{ display: "none" }} />
+
+              {/* Names Row */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1 ml-1">
                     First Name
                   </label>
-                  <div className="relative">
-                    <Input
-                      name="first_name"
-                      placeholder="Jane"
-                      value={formData.first_name}
-                      onChange={handleChange}
-                      error={errors.first_name}
-                      icon={User}
-                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    />
-                  </div>
+                  <Input
+                    name="first_name"
+                    placeholder="Jane"
+                    value={formData.first_name}
+                    onChange={handleChange}
+                    error={errors.first_name}
+                    icon={User}
+                    className={`w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:bg-white focus:ring-2 focus:border-transparent transition-all shadow-sm ${
+                      formData.role === "service_provider"
+                        ? "focus:ring-blue-500"
+                        : "focus:ring-green-500"
+                    }`}
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1 ml-1">
                     Last Name
                   </label>
-                  <div className="relative">
-                    <Input
-                      name="last_name"
-                      placeholder="Doe"
-                      value={formData.last_name}
-                      onChange={handleChange}
-                      error={errors.last_name}
-                      icon={User}
-                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">
-                  Email
-                </label>
-                <div className="relative">
                   <Input
-                    type="email"
-                    name="email"
-                    placeholder="jane@example.com"
-                    value={formData.email}
+                    name="last_name"
+                    placeholder="Doe"
+                    value={formData.last_name}
                     onChange={handleChange}
-                    error={errors.email}
-                    icon={Mail}
-                    className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    error={errors.last_name}
+                    icon={User}
+                    className={`w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:bg-white focus:ring-2 focus:border-transparent transition-all shadow-sm ${
+                      formData.role === "service_provider"
+                        ? "focus:ring-blue-500"
+                        : "focus:ring-green-500"
+                    }`}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Email */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1 ml-1">
+                  Email
+                </label>
+                <Input
+                  type="email"
+                  name="email"
+                  placeholder="jane@example.com"
+                  value={formData.email}
+                  onChange={handleChange}
+                  error={errors.email}
+                  icon={Mail}
+                  autoComplete="new-email"
+                  className={`w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:bg-white focus:ring-2 focus:border-transparent transition-all shadow-sm ${
+                    formData.role === "service_provider"
+                      ? "focus:ring-blue-500"
+                      : "focus:ring-green-500"
+                  }`}
+                />
+              </div>
+
+              {/* Phone & Location Row */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1 ml-1">
                     Phone
                   </label>
-                  <div className="relative">
-                    <Input
-                      type="tel"
-                      name="phone"
-                      placeholder="+254 700 000"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      error={errors.phone}
-                      icon={Phone}
-                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    />
-                  </div>
+                  <Input
+                    type="tel"
+                    name="phone"
+                    placeholder="+254..."
+                    value={formData.phone}
+                    onChange={handleChange}
+                    error={errors.phone}
+                    icon={Phone}
+                    className={`w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:bg-white focus:ring-2 focus:border-transparent transition-all shadow-sm ${
+                      formData.role === "service_provider"
+                        ? "focus:ring-blue-500"
+                        : "focus:ring-green-500"
+                    }`}
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1 ml-1">
                     Location
                   </label>
-                  <div className="relative">
-                    <Input
-                      name="location"
-                      placeholder="Nairobi"
-                      value={formData.location}
-                      onChange={handleChange}
-                      error={errors.location}
-                      icon={MapPin}
-                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    />
-                  </div>
+                  <Input
+                    name="location"
+                    placeholder="City"
+                    value={formData.location}
+                    onChange={handleChange}
+                    error={errors.location}
+                    icon={MapPin}
+                    className={`w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:bg-white focus:ring-2 focus:border-transparent transition-all shadow-sm ${
+                      formData.role === "service_provider"
+                        ? "focus:ring-blue-500"
+                        : "focus:ring-green-500"
+                    }`}
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Password Row */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1 ml-1">
                     Password
                   </label>
-                  <div className="relative">
-                    <Input
-                      type="password"
-                      name="password"
-                      placeholder="••••••••"
-                      value={formData.password}
-                      onChange={handleChange}
-                      error={errors.password}
-                      icon={Lock}
-                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    />
-                  </div>
+                  <Input
+                    type="password"
+                    name="password"
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={handleChange}
+                    error={errors.password}
+                    icon={Lock}
+                    autoComplete="new-password"
+                    className={`w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:bg-white focus:ring-2 focus:border-transparent transition-all shadow-sm ${
+                      formData.role === "service_provider"
+                        ? "focus:ring-blue-500"
+                        : "focus:ring-green-500"
+                    }`}
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1 ml-1">
                     Confirm
                   </label>
-                  <div className="relative">
-                    <Input
-                      type="password"
-                      name="password2"
-                      placeholder="••••••••"
-                      value={formData.password2}
-                      onChange={handleChange}
-                      error={errors.password2}
-                      icon={Lock}
-                      className="w-full bg-white border border-gray-300 rounded-xl pl-12 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    />
-                  </div>
+                  <Input
+                    type="password"
+                    name="password2"
+                    placeholder="••••••••"
+                    value={formData.password2}
+                    onChange={handleChange}
+                    error={errors.password2}
+                    icon={Lock}
+                    autoComplete="new-password"
+                    className={`w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:bg-white focus:ring-2 focus:border-transparent transition-all shadow-sm ${
+                      formData.role === "service_provider"
+                        ? "focus:ring-blue-500"
+                        : "focus:ring-green-500"
+                    }`}
+                  />
                 </div>
               </div>
 
-              <div className="pt-4">
-                <Button
-                  type="submit"
-                  variant="primary"
-                  className={`w-full py-4 text-lg font-bold shadow-lg hover:translate-y-[-2px] transition-all rounded-xl ${
-                    formData.role === "service_provider"
-                      ? "bg-blue-600 hover:bg-blue-500 shadow-blue-500/30"
-                      : "bg-green-600 hover:bg-green-500 shadow-green-500/30"
-                  }`}
-                  loading={loading}
-                >
-                  {loading ? "Creating Account..." : "Create Account"}
-                </Button>
-              </div>
+              <Button
+                type="submit"
+                variant="primary"
+                className={`w-full py-3 text-white shadow-lg transition-all rounded-lg font-bold text-sm mt-4 ${getButtonColor()}`}
+                loading={loading}
+              >
+                {loading
+                  ? "Creating Account..."
+                  : `Sign Up as ${
+                      formData.role === "service_provider"
+                        ? "Driver"
+                        : "Resident"
+                    }`}
+              </Button>
             </form>
 
-            <p className="mt-8 text-center text-gray-500 text-sm">
-              Already have an account?{" "}
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200"></div>
+              </div>
+              <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-wider">
+                <span className="px-2 bg-white text-gray-400">
+                  Already have an account?
+                </span>
+              </div>
+            </div>
+
+            <div className="text-center">
               <Link
                 to="/login"
-                className="font-bold text-green-700 hover:underline"
+                className={`inline-flex items-center justify-center w-full py-2.5 border-2 font-bold rounded-lg transition-all text-xs ${
+                  formData.role === "service_provider"
+                    ? "text-blue-600 border-blue-200 bg-blue-50"
+                    : "text-green-600 border-green-200 bg-green-50"
+                }`}
               >
                 Log in
               </Link>
-            </p>
+            </div>
           </div>
         </div>
       </div>

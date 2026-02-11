@@ -11,6 +11,7 @@ import {
   Medal,
   Scale,
   AlertCircle,
+  XCircle, // Added for Rejected History Icon
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -22,14 +23,54 @@ const Dashboard = () => {
   const { user: currentUser } = useAuth();
 
   const [profile, setProfile] = useState(
-    currentUser || { points: 0, badge: "Newcomer", full_name: "Resident" },
+    currentUser || {
+      redeemable_points: 0,
+      lifetime_points: 0,
+      badge: "Newcomer",
+      full_name: "Resident",
+    },
   );
   const [centerCount, setCenterCount] = useState(0);
   const [leaders, setLeaders] = useState([]);
   const [activity, setActivity] = useState({ pending: [], history: [] });
   const [loading, setLoading] = useState(true);
 
-  // --- HELPER FUNCTIONS ---
+  // --- HELPER: Process Data to Move Rejected items to History ---
+  const processActivityData = (data) => {
+    if (!data) return { pending: [], history: [] };
+
+    const rawPending = data.pending || [];
+    const rawHistory = data.history || [];
+
+    // 1. Filter Pending: Keep only Active (Not cancelled/rejected)
+    const activePending = rawPending.filter(
+      (req) => req.status !== "cancelled",
+    );
+
+    // 2. Extract Rejected items
+    const rejectedItems = rawPending.filter(
+      (req) => req.status === "cancelled",
+    );
+
+    // 3. Format Rejected items to look like History items
+    const formattedRejected = rejectedItems.map((req) => ({
+      id: `rej-${req.id}`,
+      waste_type: req.waste_type,
+      // Use created_at or scheduled_date for the timestamp
+      date: req.created_at || req.scheduled_date,
+      points: 0,
+      status: "Rejected", // Tag to identify in UI
+      rejection_reason: req.rejection_reason,
+    }));
+
+    // 4. Merge Real History + Rejected Items & Sort by Date (Newest First)
+    const combinedHistory = [...rawHistory, ...formattedRejected].sort(
+      (a, b) => new Date(b.date) - new Date(a.date),
+    );
+
+    return { pending: activePending, history: combinedHistory };
+  };
+
   const getDisplayName = (userObj) => {
     if (userObj.full_name && userObj.full_name.trim() !== "")
       return userObj.full_name;
@@ -40,36 +81,41 @@ const Dashboard = () => {
   };
 
   const getBadgeProgress = (points) => {
-    if (points >= 2000)
+    const safePoints = points || 0;
+    if (safePoints >= 2000)
       return { next: "Max Level", target: 2000, percent: 100 };
-    if (points >= 1000)
+    if (safePoints >= 1000)
       return {
         next: "Recycle Legend",
         target: 2000,
-        percent: (points / 2000) * 100,
+        percent: (safePoints / 2000) * 100,
       };
-    if (points >= 500)
+    if (safePoints >= 500)
       return {
         next: "Planet Protector",
         target: 1000,
-        percent: (points / 1000) * 100,
+        percent: (safePoints / 1000) * 100,
       };
-    if (points >= 250)
+    if (safePoints >= 250)
       return {
         next: "Waste Warrior",
         target: 500,
-        percent: (points / 500) * 100,
+        percent: (safePoints / 500) * 100,
       };
-    if (points >= 100)
+    if (safePoints >= 100)
       return {
         next: "Green Guardian",
         target: 250,
-        percent: (points / 250) * 100,
+        percent: (safePoints / 250) * 100,
       };
-    return { next: "Eco Starter", target: 100, percent: (points / 100) * 100 };
+    return {
+      next: "Eco Starter",
+      target: 100,
+      percent: (safePoints / 100) * 100,
+    };
   };
 
-  const progress = getBadgeProgress(profile.points || 0);
+  const progress = getBadgeProgress(profile.lifetime_points);
 
   const getRankIcon = (index) => {
     if (index === 0)
@@ -116,7 +162,7 @@ const Dashboard = () => {
         phone: profile.phone || currentUser.phone,
       });
       toast.success("Payment Received!", { id: toastId });
-      fetchHistory(); // Refresh UI immediately
+      fetchHistory();
     } catch (error) {
       toast.error(error.response?.data?.error || "Payment failed.", {
         id: toastId,
@@ -128,11 +174,8 @@ const Dashboard = () => {
     try {
       const historyRes = await api.get("/users/history/");
       const historyData = historyRes.pending ? historyRes : historyRes.data;
-      setActivity(
-        historyData && historyData.pending
-          ? historyData
-          : { pending: [], history: [] },
-      );
+      // Process data to move rejected to history
+      setActivity(processActivityData(historyData));
     } catch (error) {
       console.error("Error fetching history:", error);
     }
@@ -161,11 +204,8 @@ const Dashboard = () => {
         );
 
         const historyData = historyRes.pending ? historyRes : historyRes.data;
-        setActivity(
-          historyData && historyData.pending
-            ? historyData
-            : { pending: [], history: [] },
-        );
+        // Process data using our new helper
+        setActivity(processActivityData(historyData));
       } catch (error) {
         console.error("Dashboard Error:", error);
       } finally {
@@ -185,7 +225,6 @@ const Dashboard = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mr-auto">
       {/* 1. HERO SECTION */}
-      {/* FIX: Removed 'z-10' from the inner div so it stays BEHIND the notifications */}
       <div className="bg-gradient-to-r from-green-700 to-green-600 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
         <div className="relative flex flex-col md:flex-row justify-between items-center gap-6">
           <div>
@@ -198,8 +237,8 @@ const Dashboard = () => {
               Hello, {getDisplayName(profile)}!
             </h1>
             <p className="text-green-50 opacity-90 mt-2">
-              You have earned <strong>{profile.points} points</strong> recycling
-              with us.
+              You have <strong>{profile.redeemable_points || 0} points</strong>{" "}
+              available to redeem.
             </p>
           </div>
 
@@ -207,7 +246,7 @@ const Dashboard = () => {
             <div className="flex justify-between text-sm mb-2 font-medium">
               <span>Next: {progress.next}</span>
               <span>
-                {profile.points} / {progress.target} pts
+                {profile.lifetime_points || 0} / {progress.target} pts
               </span>
             </div>
             <div className="w-full bg-gray-700 h-3 rounded-full overflow-hidden">
@@ -227,8 +266,14 @@ const Dashboard = () => {
             <Trophy className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-sm text-gray-500 font-medium">Total Points</p>
-            <p className="text-2xl font-bold text-gray-900">{profile.points}</p>
+            <p className="text-sm text-gray-500 font-medium">Wallet Balance</p>
+            <p className="text-2xl font-bold text-gray-900">
+              {profile.redeemable_points || 0}{" "}
+              <span className="text-sm font-normal text-gray-400">pts</span>
+            </p>
+            <p className="text-xs text-green-600 font-bold mt-1">
+              Worth KES {((profile.redeemable_points || 0) * 0.3).toFixed(2)}
+            </p>
           </div>
         </div>
 
@@ -286,7 +331,7 @@ const Dashboard = () => {
                     </div>
                   </div>
                   <div className="font-bold text-gray-700">
-                    {player.points}{" "}
+                    {player.lifetime_points || 0}{" "}
                     <span className="text-xs font-normal text-gray-400">
                       pts
                     </span>
@@ -303,7 +348,7 @@ const Dashboard = () => {
 
         {/* --- RIGHT COLUMN: REQUESTS & HISTORY --- */}
         <div className="space-y-8">
-          {/* Pickup Requests */}
+          {/* Pickup Requests (NOW EXCLUDES REJECTED) */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
             <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
               <Clock className="w-5 h-5 text-orange-500" /> Pickup Requests
@@ -327,14 +372,13 @@ const Dashboard = () => {
                           req.status === "paid" ||
                           req.is_paid;
                         const isCollected = req.status === "collected";
-                        const isCancelled = req.status === "cancelled";
                         const hasWeight = Number(req.actual_quantity) > 0;
                         const billAmount = Number(req.billed_amount) || 0;
 
                         return (
                           <div
                             key={req.id}
-                            className={`p-3 border rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${isCancelled ? "bg-red-50 border-red-100" : "bg-orange-50 border-orange-100"}`}
+                            className="p-3 border rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-orange-50 border-orange-100"
                           >
                             <div>
                               <p className="font-bold text-sm text-gray-800 flex items-center gap-2">
@@ -344,11 +388,9 @@ const Dashboard = () => {
                                     {req.actual_quantity} kg
                                   </span>
                                 ) : (
-                                  !isCancelled && (
-                                    <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200">
-                                      Pending Weighing
-                                    </span>
-                                  )
+                                  <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200">
+                                    Pending Weighing
+                                  </span>
                                 )}
                               </p>
                               <div className="flex items-center gap-1.5 text-xs text-gray-600 mt-1.5">
@@ -384,10 +426,6 @@ const Dashboard = () => {
                                     ? `Pay KES ${billAmount}`
                                     : "Pay Bill"}
                                 </button>
-                              ) : isCancelled ? (
-                                <span className="text-xs font-bold px-2 py-1 rounded border bg-white text-red-600 border-red-200 flex items-center gap-1">
-                                  <AlertCircle size={12} /> Rejected
-                                </span>
                               ) : (
                                 <span className="text-xs font-bold px-2 py-1 rounded border bg-white text-orange-600 border-orange-200 flex items-center gap-1">
                                   <Scale size={12} /> Pending
@@ -403,45 +441,73 @@ const Dashboard = () => {
               </div>
             ) : (
               <p className="text-sm text-gray-400 italic">
-                No recent requests.
+                No active pickup requests.
               </p>
             )}
           </div>
 
-          {/* Recent History */}
+          {/* Recent History (NOW INCLUDES REJECTED + SCROLLABLE) */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
             <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
-              <History className="w-5 h-5 text-blue-500" /> Recent History
+              <History className="w-5 h-5 text-blue-500" /> History
             </h2>
-            {activity.history && activity.history.length > 0 ? (
-              <div className="space-y-3">
-                {activity.history.slice(0, 3).map((log) => (
-                  <div
-                    key={log.id}
-                    className="p-3 bg-gray-50 border border-gray-100 rounded-lg flex justify-between items-center"
-                  >
-                    <div className="flex items-center gap-3">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                      <div>
-                        <p className="font-bold text-sm text-gray-800">
-                          {log.waste_type}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(log.date).toLocaleDateString()}
-                        </p>
+            {/* Added Scrollable Container */}
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+              {activity.history && activity.history.length > 0 ? (
+                activity.history.map((log) => {
+                  // Check if this item is a Rejected Request
+                  const isRejected = log.status === "Rejected";
+
+                  return (
+                    <div
+                      key={log.id}
+                      className={`p-3 border rounded-lg flex justify-between items-center ${
+                        isRejected
+                          ? "bg-red-50 border-red-100"
+                          : "bg-gray-50 border-gray-100"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {isRejected ? (
+                          <XCircle className="w-5 h-5 text-red-500" />
+                        ) : (
+                          <CheckCircle className="w-5 h-5 text-green-500" />
+                        )}
+
+                        <div>
+                          <p className="font-bold text-sm text-gray-800">
+                            {log.waste_type}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(log.date).toLocaleDateString()}
+                          </p>
+                          {/* Show Rejection Reason if available */}
+                          {isRejected && log.rejection_reason && (
+                            <p className="text-xs text-red-500 mt-1 italic">
+                              "{log.rejection_reason}"
+                            </p>
+                          )}
+                        </div>
                       </div>
+
+                      {isRejected ? (
+                        <span className="text-xs font-bold text-red-600 border border-red-200 bg-white px-2 py-1 rounded">
+                          Rejected
+                        </span>
+                      ) : (
+                        <span className="text-sm font-bold text-green-600">
+                          +{log.points} pts
+                        </span>
+                      )}
                     </div>
-                    <span className="text-sm font-bold text-green-600">
-                      +{log.points} pts
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400 italic">
-                No recycling history yet.
-              </p>
-            )}
+                  );
+                })
+              ) : (
+                <p className="text-sm text-gray-400 italic">
+                  No history found.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>

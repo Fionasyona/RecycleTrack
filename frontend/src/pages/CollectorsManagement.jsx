@@ -3,12 +3,10 @@ import { api } from "../services/api";
 import toast from "react-hot-toast";
 import {
   Truck,
-  Plus,
   Trash2,
   Phone,
   Mail,
   X,
-  Save,
   Loader,
   Search,
   User,
@@ -17,6 +15,7 @@ import {
   FileText,
   ShieldAlert,
   Eye,
+  PackageCheck, // Added Icon for Completed Jobs
 } from "lucide-react";
 
 const CollectorsManagement = () => {
@@ -26,17 +25,6 @@ const CollectorsManagement = () => {
 
   // Modal State for Viewing Docs
   const [selectedDriver, setSelectedDriver] = useState(null);
-
-  // Form State
-  const [showForm, setShowForm] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    first_name: "",
-    last_name: "",
-    email: "",
-    password: "",
-    phone: "",
-  });
 
   const fetchCollectors = async () => {
     try {
@@ -54,28 +42,6 @@ const CollectorsManagement = () => {
     fetchCollectors();
   }, []);
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    setFormLoading(true);
-    try {
-      const res = await api.post("/users/admin/collectors/create/", formData);
-      toast.success("Collector hired successfully!");
-      setShowForm(false);
-      setFormData({
-        first_name: "",
-        last_name: "",
-        email: "",
-        password: "",
-        phone: "",
-      });
-      fetchCollectors();
-    } catch (error) {
-      toast.error(error.response?.data?.error || "Failed to create collector");
-    } finally {
-      setFormLoading(false);
-    }
-  };
-
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure? This cannot be undone.")) return;
     try {
@@ -87,7 +53,7 @@ const CollectorsManagement = () => {
     }
   };
 
-  // --- NEW: Verify Driver Logic ---
+  // --- Verify Driver Logic ---
   const handleVerify = async (driverId) => {
     if (!window.confirm("Verify this driver's documents and approve them?"))
       return;
@@ -130,39 +96,19 @@ const CollectorsManagement = () => {
           </p>
         </div>
 
-        <div className="flex gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-3 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search drivers..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 flex items-center gap-2"
-          >
-            {showForm ? <X size={18} /> : <Plus size={18} />}{" "}
-            {showForm ? "Cancel" : "Add Driver"}
-          </button>
+        <div className="relative w-full md:w-64">
+          <Search className="absolute left-3 top-3 text-gray-400 w-4 h-4" />
+          <input
+            type="text"
+            placeholder="Search drivers..."
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
       </div>
 
-      {/* 2. ADD FORM (Hidden by default) */}
-      {showForm && (
-        <div className="bg-green-50 p-6 rounded-2xl border border-green-100">
-          {/* ... (Keep your existing form code exactly as is) ... */}
-          {/* For brevity, I'm assuming you paste your previous form code here */}
-          <p className="text-center text-gray-400 italic">
-            -- Form code goes here --
-          </p>
-        </div>
-      )}
-
-      {/* 3. DRIVERS TABLE */}
+      {/* 2. DRIVERS TABLE */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-500">
@@ -175,95 +121,132 @@ const CollectorsManagement = () => {
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs uppercase text-gray-500 font-semibold tracking-wider">
                   <th className="p-4">Driver Details</th>
                   <th className="p-4">Contact & Location</th>
+                  <th className="p-4">Performance</th> {/* NEW HEADER */}
                   <th className="p-4">Verification</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredCollectors.map((c) => {
-                  // Check status
-                  const isVerified = c.driver_profile?.is_verified;
-                  const hasTempID = c.driver_profile?.id_no?.startsWith("TEMP");
+                {filteredCollectors.length > 0 ? (
+                  filteredCollectors.map((c) => {
+                    // Check status
+                    const isVerified = c.driver_profile?.is_verified;
+                    const hasTempID =
+                      c.driver_profile?.id_no?.startsWith("TEMP");
+                    // Assuming API returns completed_jobs_count or similar, usually calculated on backend
+                    // If not available, fallback to 0.
+                    // NOTE: You might need to update backend serializer to include `completed_jobs_count`
+                    const jobsDone =
+                      c.completed_jobs_count ||
+                      c.driver_profile?.total_jobs ||
+                      0;
 
-                  return (
-                    <tr
-                      key={c.id}
-                      className="hover:bg-gray-50 transition-colors"
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold">
-                            {c.full_name?.[0] || <User size={18} />}
-                          </div>
-                          <div>
-                            <p className="font-bold text-gray-900">
-                              {c.full_name}
-                            </p>
-                            <div className="flex items-center gap-1 text-xs text-gray-500">
-                              <Mail size={12} /> {c.email}
+                    return (
+                      <tr
+                        key={c.id}
+                        className="hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold">
+                              {c.full_name?.[0] || <User size={18} />}
+                            </div>
+                            <div>
+                              <p className="font-bold text-gray-900">
+                                {c.full_name}
+                              </p>
+                              <div className="flex items-center gap-1 text-xs text-gray-500">
+                                <Mail size={12} /> {c.email}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td className="p-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-sm text-gray-700">
-                            <Phone size={14} className="text-gray-400" />{" "}
-                            {c.phone || "N/A"}
+                        <td className="p-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 text-sm text-gray-700">
+                              <Phone size={14} className="text-gray-400" />{" "}
+                              {c.phone || "N/A"}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-700">
+                              <MapPin size={14} className="text-gray-400" />{" "}
+                              {c.address || "Nairobi, KE"}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-700">
-                            <MapPin size={14} className="text-gray-400" />{" "}
-                            {c.address || "Nairobi, KE"}
+                        </td>
+
+                        {/* NEW: Performance Column */}
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <div className="bg-blue-50 text-blue-600 p-2 rounded-lg">
+                              <PackageCheck size={18} />
+                            </div>
+                            <div>
+                              <p className="font-bold text-gray-900 text-lg leading-none">
+                                {jobsDone}
+                              </p>
+                              <span className="text-xs text-gray-500 font-medium uppercase">
+                                Pickups
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td className="p-4">
-                        {isVerified ? (
-                          <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">
-                            <CheckCircle size={12} /> Verified
-                          </span>
-                        ) : hasTempID ? (
-                          <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-bold">
-                            <Loader size={12} /> Not Registered
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-bold animate-pulse">
-                            <ShieldAlert size={12} /> Pending Approval
-                          </span>
-                        )}
-                      </td>
+                        <td className="p-4">
+                          {isVerified ? (
+                            <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">
+                              <CheckCircle size={12} /> Verified
+                            </span>
+                          ) : hasTempID ? (
+                            <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-bold">
+                              <Loader size={12} /> Not Registered
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-bold animate-pulse">
+                              <ShieldAlert size={12} /> Pending Approval
+                            </span>
+                          )}
+                        </td>
 
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {/* View Docs Button */}
-                          <button
-                            onClick={() => setSelectedDriver(c)}
-                            className="text-blue-600 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition"
-                            title="View Documents"
-                          >
-                            <Eye size={18} />
-                          </button>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {/* View Docs Button */}
+                            <button
+                              onClick={() => setSelectedDriver(c)}
+                              className="text-blue-600 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition"
+                              title="View Documents"
+                            >
+                              <Eye size={18} />
+                            </button>
 
-                          <button
-                            onClick={() => handleDelete(c.id)}
-                            className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            <button
+                              onClick={() => handleDelete(c.id)}
+                              className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td
+                      colSpan="5"
+                      className="p-8 text-center text-gray-500 italic"
+                    >
+                      No drivers found matching "{searchTerm}"
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* 4. DOCUMENT VIEWER MODAL */}
+      {/* 3. DOCUMENT VIEWER MODAL */}
       {selectedDriver && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in duration-200">

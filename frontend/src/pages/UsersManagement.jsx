@@ -1,34 +1,31 @@
-import React, { useState, useEffect } from "react";
-import { api } from "../services/api";
-import toast from "react-hot-toast";
 import {
-  Users,
-  Search,
-  User,
   CheckCircle,
-  XCircle,
   Loader,
-  Power, // Added Power icon for deactivation
+  MapPin,
+  Phone,
+  Power,
+  Search,
+  Trophy,
+  User,
+  Users,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { api } from "../services/api";
 
 const UsersManagement = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // 1. Fetch All Users
   const fetchUsers = async () => {
     try {
       const res = await api.get("/users/users/");
-      console.log("Users API Response:", res);
-
       const data = Array.isArray(res) ? res : res.data;
-
       if (Array.isArray(data)) {
         setUsers(data);
       } else {
         setUsers([]);
-        console.error("API did not return a list:", res);
       }
     } catch (error) {
       console.error("Failed to load users", error);
@@ -42,14 +39,11 @@ const UsersManagement = () => {
     fetchUsers();
   }, []);
 
-  // 2. Handle Deactivate/Activate Toggle
   const handleToggleStatus = async (userId, currentStatus) => {
-    // Determine action name based on current status
     const action = currentStatus ? "Deactivate" : "Activate";
-
     if (
       !window.confirm(
-        `Are you sure you want to ${action.toLowerCase()} this user? They will ${currentStatus ? "lose" : "regain"} access to the system.`,
+        `Are you sure you want to ${action.toLowerCase()} this user?`,
       )
     )
       return;
@@ -57,8 +51,6 @@ const UsersManagement = () => {
     try {
       await api.patch(`/users/users/${userId}/status/`);
       toast.success(`User ${action}d successfully!`);
-
-      // Update UI locally without refreshing
       setUsers(
         users.map((u) =>
           u.id === userId ? { ...u, is_active: !u.is_active } : u,
@@ -69,7 +61,6 @@ const UsersManagement = () => {
     }
   };
 
-  // Filter users based on search
   const filteredUsers = users.filter(
     (user) =>
       (user.email || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -85,11 +76,10 @@ const UsersManagement = () => {
             <Users className="w-6 h-6 text-green-600" /> User Management
           </h1>
           <p className="text-sm text-gray-500">
-            View and manage all registered residents and admins.
+            View and manage all registered residents.
           </p>
         </div>
 
-        {/* Search Bar */}
         <div className="relative w-full md:w-64">
           <Search className="absolute left-3 top-3 text-gray-400 w-4 h-4" />
           <input
@@ -115,8 +105,9 @@ const UsersManagement = () => {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs uppercase text-gray-500 font-semibold tracking-wider">
                   <th className="p-4">User Details</th>
+                  <th className="p-4">Contact Info</th>
                   <th className="p-4">Role</th>
-                  <th className="p-4">Points</th>
+                  <th className="p-4">Lifetime Pts</th> {/* UPDATED HEADER */}
                   <th className="p-4">Status</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
@@ -128,6 +119,7 @@ const UsersManagement = () => {
                       key={user.id}
                       className="hover:bg-gray-50 transition-colors"
                     >
+                      {/* User Details */}
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold">
@@ -147,6 +139,27 @@ const UsersManagement = () => {
                           </div>
                         </div>
                       </td>
+
+                      {/* Contact Info */}
+                      <td className="p-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Phone className="w-3.5 h-3.5 text-gray-400" />
+                            <span>{user.phone || "No phone"}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                            <span
+                              className="truncate max-w-[150px]"
+                              title={user.address}
+                            >
+                              {user.address || "No address"}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Role */}
                       <td className="p-4">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${
@@ -158,11 +171,21 @@ const UsersManagement = () => {
                           {user.role || "Resident"}
                         </span>
                       </td>
-                      <td className="p-4 font-medium text-gray-600">
-                        {user.points} pts
-                      </td>
+
+                      {/* Lifetime Points (FIXED) */}
                       <td className="p-4">
-                        {/* Status Badge */}
+                        <div className="flex items-center gap-2 font-medium text-gray-700">
+                          <Trophy className="w-4 h-4 text-yellow-500" />
+                          {/* Changed from redeemable_points to lifetime_points */}
+                          {user.lifetime_points || 0}
+                        </div>
+                        <span className="text-xs text-gray-400 pl-6">
+                          {user.badge || "No Badge"}
+                        </span>
+                      </td>
+
+                      {/* Status */}
+                      <td className="p-4">
                         {user.is_active ? (
                           <span className="flex items-center gap-1 text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded w-fit border border-green-100">
                             <CheckCircle className="w-3 h-3" /> Active
@@ -173,6 +196,8 @@ const UsersManagement = () => {
                           </span>
                         )}
                       </td>
+
+                      {/* Actions */}
                       <td className="p-4 text-right">
                         <button
                           onClick={() =>
@@ -200,7 +225,7 @@ const UsersManagement = () => {
                 ) : (
                   <tr>
                     <td
-                      colSpan="5"
+                      colSpan="6"
                       className="p-8 text-center text-gray-500 italic"
                     >
                       No users found matching "{searchTerm}"

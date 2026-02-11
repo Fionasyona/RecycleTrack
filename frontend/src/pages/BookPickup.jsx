@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from "react";
-import { api, centerAPI } from "../services/api";
-import { useNavigate } from "react-router-dom";
-import toast from "react-hot-toast";
 import {
-  Truck,
-  Calendar,
-  Recycle,
-  MapPin,
-  Loader,
   ArrowLeft,
-  Navigation,
+  Calendar,
   ExternalLink,
+  Loader,
+  MapPin,
+  Navigation,
+  Recycle,
+  Truck,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
+import { api, centerAPI } from "../services/api";
 
 const BookPickup = () => {
   const navigate = useNavigate();
@@ -187,6 +187,7 @@ const BookPickup = () => {
                       <option value="Glass">Glass</option>
                       <option value="Paper">Paper</option>
                       <option value="Metal">Metal</option>
+                      <option value="E-waste">E-waste</option>
                     </select>
                   </div>
                 </div>

@@ -52,3 +52,18 @@
 .animate-fade-in {
   animation: fade-in 0.2s ease-out forwards;
 }
+
+/* --- LEAFLET MAP FIX --- */
+/* This overrides Tailwind's default img max-width rule that breaks map tiles */
+.leaflet-pane img,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+  max-width: none !important;
+  max-height: none !important;
+}
+
+/* Ensures the map stays below modals/dropdowns (Tailwind often sets high z-indexes) */
+.leaflet-container {
+  z-index: 0; 
+}
