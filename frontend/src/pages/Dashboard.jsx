@@ -11,7 +11,8 @@ import {
   Medal,
   Scale,
   AlertCircle,
-  XCircle, // Added for Rejected History Icon
+  XCircle,
+  Wallet, // Added Wallet Icon
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -150,6 +151,43 @@ const Dashboard = () => {
     return groups;
   };
 
+  // --- NEW: Handle Withdrawal ---
+  const handleWithdraw = async () => {
+    const points = profile.redeemable_points || 0;
+    const amount = (points * 0.3).toFixed(2); // Assuming 1 point = 0.3 KES
+
+    // Validation: Minimum points required (e.g., 100 points)
+    if (points < 100) {
+      toast.error("You need at least 100 points to withdraw.");
+      return;
+    }
+
+    if (!window.confirm(`Withdraw KES ${amount} to your M-Pesa number?`))
+      return;
+
+    const toastId = toast.loading("Processing Withdrawal...");
+
+    try {
+      // NOTE: Ensure this endpoint exists in your Django backend!
+      await api.post("/users/withdraw/initiate/", {
+        amount: amount,
+        phone: profile.phone || currentUser.phone,
+      });
+
+      toast.success("Withdrawal initiated! Check your phone.", { id: toastId });
+
+      // Refresh profile to update points balance immediately
+      const profileRes = await api.get("/users/profile/");
+      setProfile(profileRes.data || profileRes);
+    } catch (error) {
+      console.error("Withdraw Error", error);
+      toast.error(
+        error.response?.data?.error || "Withdrawal failed. Try again.",
+        { id: toastId },
+      );
+    }
+  };
+
   const handlePayment = async (pickupId, amount) => {
     const safeAmount = amount || 0;
     if (!window.confirm(`Pay KES ${safeAmount} for waste collection service?`))
@@ -261,22 +299,43 @@ const Dashboard = () => {
 
       {/* 2. STATS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
-          <div className="bg-yellow-100 p-3 rounded-full text-yellow-600">
-            <Trophy className="w-6 h-6" />
+        {/* --- UPDATED WALLET CARD --- */}
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            <div className="bg-yellow-100 p-3 rounded-full text-yellow-600">
+              <Trophy className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 font-medium">
+                Wallet Balance
+              </p>
+              <p className="text-2xl font-bold text-gray-900">
+                {profile.redeemable_points || 0}{" "}
+                <span className="text-sm font-normal text-gray-400">pts</span>
+              </p>
+              <p className="text-xs text-green-600 font-bold mt-1">
+                Worth KES {((profile.redeemable_points || 0) * 0.3).toFixed(2)}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-gray-500 font-medium">Wallet Balance</p>
-            <p className="text-2xl font-bold text-gray-900">
-              {profile.redeemable_points || 0}{" "}
-              <span className="text-sm font-normal text-gray-400">pts</span>
-            </p>
-            <p className="text-xs text-green-600 font-bold mt-1">
-              Worth KES {((profile.redeemable_points || 0) * 0.3).toFixed(2)}
-            </p>
-          </div>
+
+          {/* WITHDRAW BUTTON */}
+          <button
+            onClick={handleWithdraw}
+            disabled={(profile.redeemable_points || 0) < 100} // Disable if less than 100 points
+            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow-md hover:bg-green-700 hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:shadow-none"
+            title={
+              (profile.redeemable_points || 0) < 100
+                ? "Minimum 100 points required to withdraw"
+                : "Withdraw to M-Pesa"
+            }
+          >
+            <Wallet size={16} />
+            Withdraw
+          </button>
         </div>
 
+        {/* ACTIVE CENTERS CARD */}
         <Link
           to="/maps"
           className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 hover:shadow-md transition group"

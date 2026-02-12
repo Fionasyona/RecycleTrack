@@ -1,17 +1,14 @@
 import {
   AlertCircle,
   Archive,
-  Calendar,
   CalendarClock,
   CheckCircle,
-  Clock,
   LayoutDashboard,
   Loader,
   LogOut,
   MapPin,
   Menu,
   Navigation,
-  Package,
   RefreshCw,
   Scale,
   ShieldCheck,
@@ -22,8 +19,9 @@ import {
   X,
   Phone,
   Mail,
+  Coins,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
@@ -69,7 +67,7 @@ const CollectorDashboard = () => {
         console.error("History Error", err);
       }
 
-      // 3. Wallet (Transactions)
+      // 3. Wallet
       try {
         const walletRes = await api.get("/users/driver/wallet/");
         const walletData = walletRes.data || walletRes;
@@ -158,11 +156,27 @@ const CollectorDashboard = () => {
     return groups;
   };
 
-  // Helper to calculate earnings per job row
+  // --- FORMULA LOGIC ---
   const calculateEarnings = (billed_amount) => {
-    if (!billed_amount) return 0;
-    return 100 + parseFloat(billed_amount) * 0.2;
+    const bill = parseFloat(billed_amount) || 0; // Default to 0 if null/NaN
+    // Formula: Always add 100 Base + 20% of Bill
+    return 100 + bill * 0.2;
   };
+
+  // --- LIFETIME PAYOUT (Corrected to always include Base Fee) ---
+  const lifetimePayout = useMemo(() => {
+    if (!history || !Array.isArray(history)) return 0;
+
+    return history.reduce((total, job) => {
+      // 1. Get billed amount (default to 0)
+      const bill = parseFloat(job.billed_amount) || 0;
+
+      // 2. Apply Formula: Base 100 + 20% (Even if bill is 0)
+      const payoutForJob = 100 + bill * 0.2;
+
+      return total + payoutForJob;
+    }, 0);
+  }, [history]);
 
   const SidebarItem = ({ id, label, icon: Icon }) => (
     <button
@@ -394,26 +408,50 @@ const CollectorDashboard = () => {
                   </div>
                 )}
 
-                {/* WALLET TAB (With Payment Transactions) */}
+                {/* WALLET TAB */}
                 {activeTab === "wallet" && (
                   <div className="space-y-6 animate-in fade-in duration-500">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="bg-gradient-to-br from-green-600 to-green-700 p-6 rounded-2xl text-white shadow-lg">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* 1. CURRENT BALANCE */}
+                      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
                         <div className="flex justify-between items-start mb-4">
-                          <div className="bg-white/20 p-2 rounded-lg">
-                            <Wallet className="text-white" size={24} />
+                          <div className="bg-green-100 p-2 rounded-lg">
+                            <Wallet className="text-green-600" size={24} />
                           </div>
-                          <span className="bg-green-800/50 text-xs font-bold px-2 py-1 rounded text-green-100">
-                            Verified
+                          <span className="bg-green-100 text-xs font-bold px-2 py-1 rounded text-green-700">
+                            Available
                           </span>
                         </div>
-                        <p className="text-green-100 text-sm font-medium mb-1">
-                          Total Earned
+                        <p className="text-gray-500 text-sm font-medium mb-1">
+                          Current Balance
                         </p>
-                        <h2 className="text-4xl font-bold">
+                        <h2 className="text-3xl font-bold text-gray-800">
                           KES {wallet.total_earned}
                         </h2>
                       </div>
+
+                      {/* 2. TOTAL LIFETIME PAYOUT (NEW) */}
+                      <div className="bg-gradient-to-br from-green-600 to-green-700 p-6 rounded-2xl text-white shadow-lg transform hover:scale-105 transition-transform duration-300">
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="bg-white/20 p-2 rounded-lg">
+                            <Coins className="text-white" size={24} />
+                          </div>
+                          <span className="bg-green-800/50 text-xs font-bold px-2 py-1 rounded text-green-100">
+                            Lifetime
+                          </span>
+                        </div>
+                        <p className="text-green-100 text-sm font-medium mb-1">
+                          Total Driver Payout
+                        </p>
+                        <h2 className="text-3xl font-bold">
+                          KES {lifetimePayout.toFixed(2)}
+                        </h2>
+                        <p className="text-xs text-green-200 mt-2 opacity-80">
+                          Base (100) + 20% Commission
+                        </p>
+                      </div>
+
+                      {/* 3. PENDING */}
                       <div className="bg-white p-6 rounded-2xl border border-orange-200 shadow-sm">
                         <div className="flex justify-between items-start mb-4">
                           <div className="bg-orange-100 p-2 rounded-lg">
@@ -423,13 +461,13 @@ const CollectorDashboard = () => {
                             />
                           </div>
                           <span className="bg-orange-100 text-xs font-bold px-2 py-1 rounded text-orange-600">
-                            Pending
+                            Processing
                           </span>
                         </div>
                         <p className="text-gray-500 text-sm font-medium mb-1">
                           Pending Clearance
                         </p>
-                        <h2 className="text-4xl font-bold text-gray-800">
+                        <h2 className="text-3xl font-bold text-gray-800">
                           KES {wallet.pending_amount}
                         </h2>
                       </div>
@@ -507,7 +545,7 @@ const CollectorDashboard = () => {
                   </div>
                 )}
 
-                {/* --- SIMPLIFIED JOB HISTORY TAB (Work Log) --- */}
+                {/* JOB HISTORY TAB */}
                 {activeTab === "history" && (
                   <div className="space-y-4 animate-in fade-in duration-500">
                     {history.length === 0 ? (
@@ -523,7 +561,6 @@ const CollectorDashboard = () => {
                               key={job.id}
                               className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4"
                             >
-                              {/* 1. Date Block */}
                               <div className="flex flex-col items-center justify-center bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 min-w-[70px]">
                                 <span className="text-xs font-bold text-gray-400 uppercase">
                                   {dateObj.toLocaleString("default", {
@@ -534,7 +571,6 @@ const CollectorDashboard = () => {
                                   {dateObj.getDate()}
                                 </span>
                               </div>
-                              {/* 2. Work Info */}
                               <div className="flex-1 border-l border-gray-100 pl-4">
                                 <h4 className="font-bold text-gray-900 text-base">
                                   {job.user_full_name}
@@ -546,7 +582,6 @@ const CollectorDashboard = () => {
                                   </span>
                                 </div>
                               </div>
-                              {/* 3. Weight Badge */}
                               <div className="text-right">
                                 <div className="flex flex-col items-end gap-1">
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-green-50 text-green-700 text-xs font-bold border border-green-100">
