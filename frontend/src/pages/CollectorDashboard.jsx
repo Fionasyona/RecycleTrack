@@ -20,6 +20,7 @@ import {
   Phone,
   Mail,
   Coins,
+  Building2, // Added for Center display
 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
@@ -101,18 +102,9 @@ const CollectorDashboard = () => {
     fetchData();
   }, []);
 
-  const getJobCoordinates = (job) => {
-    const lat = parseFloat(job.latitude);
-    const lng = parseFloat(job.longitude);
-    if (!isNaN(lat) && !isNaN(lng)) return [lat, lng];
-    return NAIROBI_CENTER;
-  };
-
   const openGoogleMaps = (lat, lng) => {
-    window.open(
-      `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
-      "_blank",
-    );
+    if (!lat || !lng) return toast.error("Coordinates not available");
+    window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank");
   };
 
   const handleBillUser = async (id) => {
@@ -156,25 +148,16 @@ const CollectorDashboard = () => {
     return groups;
   };
 
-  // --- FORMULA LOGIC ---
   const calculateEarnings = (billed_amount) => {
-    const bill = parseFloat(billed_amount) || 0; // Default to 0 if null/NaN
-    // Formula: Always add 100 Base + 20% of Bill
+    const bill = parseFloat(billed_amount) || 0;
     return 100 + bill * 0.2;
   };
 
-  // --- LIFETIME PAYOUT (Corrected to always include Base Fee) ---
   const lifetimePayout = useMemo(() => {
     if (!history || !Array.isArray(history)) return 0;
-
     return history.reduce((total, job) => {
-      // 1. Get billed amount (default to 0)
       const bill = parseFloat(job.billed_amount) || 0;
-
-      // 2. Apply Formula: Base 100 + 20% (Even if bill is 0)
-      const payoutForJob = 100 + bill * 0.2;
-
-      return total + payoutForJob;
+      return total + (100 + bill * 0.2);
     }, 0);
   }, [history]);
 
@@ -236,8 +219,12 @@ const CollectorDashboard = () => {
                 <p className="font-bold text-gray-200 text-sm truncate">
                   {user?.full_name || "Driver"}
                 </p>
-                <p className="text-xs text-green-400 font-medium">
-                  Verified Driver
+                <p
+                  className={`text-xs font-medium ${driverProfile?.driver_profile?.is_verified ? "text-green-400" : "text-orange-400"}`}
+                >
+                  {driverProfile?.driver_profile?.is_verified
+                    ? "Verified Driver"
+                    : "Pending Verification"}
                 </p>
               </div>
             </div>
@@ -279,7 +266,7 @@ const CollectorDashboard = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-lg md:text-xl font-bold text-gray-800 flex items-center gap-2">
+            <h1 className="text-lg md:text-xl font-bold text-gray-800">
               {activeTab === "active"
                 ? "Active Assignments"
                 : activeTab === "wallet"
@@ -328,75 +315,104 @@ const CollectorDashboard = () => {
                                 <table className="w-full text-left border-collapse">
                                   <thead className="bg-gray-50 border-b border-gray-100 text-xs uppercase text-gray-500 font-bold tracking-wider">
                                     <tr>
-                                      <th className="p-4">Customer</th>
-                                      <th className="p-4">Details</th>
+                                      <th className="p-4">
+                                        Customer & Location
+                                      </th>
+                                      <th className="p-4">
+                                        Waste & Destination
+                                      </th>
                                       <th className="p-4">Action</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
-                                    {dateJobs.map((job) => {
-                                      const coords = getJobCoordinates(job);
-                                      return (
-                                        <tr
-                                          key={job.id}
-                                          className="hover:bg-gray-50/50 transition-colors"
-                                        >
-                                          <td className="p-4">
-                                            <div className="flex items-center gap-3">
-                                              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
-                                                {job.user_full_name?.[0]}
-                                              </div>
-                                              <div>
-                                                <p className="font-bold text-gray-900 text-sm">
-                                                  {job.user_full_name}
-                                                </p>
-                                                <p className="text-xs text-gray-500 flex items-center gap-1">
-                                                  <MapPin size={10} />{" "}
-                                                  {job.region}
-                                                </p>
-                                              </div>
+                                    {dateJobs.map((job) => (
+                                      <tr
+                                        key={job.id}
+                                        className="hover:bg-gray-50/50 transition-colors"
+                                      >
+                                        <td className="p-4">
+                                          <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
+                                              {job.user_full_name?.[0]}
                                             </div>
-                                          </td>
-                                          <td className="p-4">
-                                            <div className="flex flex-col gap-1">
-                                              <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded w-fit">
-                                                {job.waste_type}
-                                              </span>
-                                              <span className="text-xs text-gray-500">
-                                                {new Date(
-                                                  job.scheduled_date,
-                                                ).toLocaleDateString()}
-                                              </span>
+                                            <div>
+                                              <p className="font-bold text-gray-900 text-sm">
+                                                {job.user_full_name}
+                                              </p>
+                                              <p className="text-xs text-gray-500 flex items-center gap-1">
+                                                <MapPin size={10} />{" "}
+                                                {job.pickup_address ||
+                                                  job.region}
+                                              </p>
                                             </div>
-                                          </td>
-                                          <td className="p-4">
-                                            <div className="flex gap-2">
+                                          </div>
+                                        </td>
+                                        <td className="p-4">
+                                          <div className="flex flex-col gap-2">
+                                            <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded w-fit">
+                                              {job.waste_type} ({job.quantity}
+                                              kg)
+                                            </span>
+                                            {/* --- RECYCLING CENTER INFO --- */}
+                                            <div className="flex flex-col bg-green-50 p-2 rounded-lg border border-green-100">
+                                              <div className="flex items-center gap-1.5 text-[11px] text-green-700 font-bold">
+                                                <Building2 size={12} />
+                                                <span>
+                                                  {job.center_name ||
+                                                    "Assigned Center"}
+                                                </span>
+                                              </div>
+                                              <p className="text-[10px] text-green-600/70 truncate pl-4">
+                                                {job.center_address ||
+                                                  "Nairobi, Kenya"}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="p-4">
+                                          <div className="flex gap-2">
+                                            {/* Route to Resident */}
+                                            <button
+                                              onClick={() =>
+                                                openGoogleMaps(
+                                                  job.latitude,
+                                                  job.longitude,
+                                                )
+                                              }
+                                              className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                                              title="Route to Resident"
+                                            >
+                                              <Navigation size={18} />
+                                            </button>
+
+                                            {/* Route to Recycling Center */}
+                                            <button
+                                              onClick={() =>
+                                                openGoogleMaps(
+                                                  job.center_latitude,
+                                                  job.center_longitude,
+                                                )
+                                              }
+                                              className="p-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+                                              title="Route to Recycling Center"
+                                            >
+                                              <Building2 size={18} />
+                                            </button>
+
+                                            {job.status === "assigned" && (
                                               <button
                                                 onClick={() =>
-                                                  openGoogleMaps(
-                                                    coords[0],
-                                                    coords[1],
-                                                  )
+                                                  handleBillUser(job.id)
                                                 }
-                                                className="p-2 bg-blue-50 text-blue-600 rounded-lg"
+                                                className="px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition-shadow shadow-md"
                                               >
-                                                <Navigation size={18} />
+                                                Weigh
                                               </button>
-                                              {job.status === "assigned" && (
-                                                <button
-                                                  onClick={() =>
-                                                    handleBillUser(job.id)
-                                                  }
-                                                  className="px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-bold"
-                                                >
-                                                  Weigh
-                                                </button>
-                                              )}
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
                                   </tbody>
                                 </table>
                               </div>
@@ -412,7 +428,6 @@ const CollectorDashboard = () => {
                 {activeTab === "wallet" && (
                   <div className="space-y-6 animate-in fade-in duration-500">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      {/* 1. CURRENT BALANCE */}
                       <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
                         <div className="flex justify-between items-start mb-4">
                           <div className="bg-green-100 p-2 rounded-lg">
@@ -430,7 +445,6 @@ const CollectorDashboard = () => {
                         </h2>
                       </div>
 
-                      {/* 2. TOTAL LIFETIME PAYOUT (NEW) */}
                       <div className="bg-gradient-to-br from-green-600 to-green-700 p-6 rounded-2xl text-white shadow-lg transform hover:scale-105 transition-transform duration-300">
                         <div className="flex justify-between items-start mb-4">
                           <div className="bg-white/20 p-2 rounded-lg">
@@ -451,7 +465,6 @@ const CollectorDashboard = () => {
                         </p>
                       </div>
 
-                      {/* 3. PENDING */}
                       <div className="bg-white p-6 rounded-2xl border border-orange-200 shadow-sm">
                         <div className="flex justify-between items-start mb-4">
                           <div className="bg-orange-100 p-2 rounded-lg">
@@ -473,7 +486,6 @@ const CollectorDashboard = () => {
                       </div>
                     </div>
 
-                    {/* PAYMENT HISTORY TABLE */}
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                       <div className="p-6 border-b border-gray-100">
                         <h3 className="font-bold text-gray-800 flex items-center gap-2">
@@ -575,11 +587,18 @@ const CollectorDashboard = () => {
                                 <h4 className="font-bold text-gray-900 text-base">
                                   {job.user_full_name}
                                 </h4>
-                                <div className="flex items-center gap-1 text-sm text-gray-500 mt-0.5">
-                                  <MapPin size={14} className="text-gray-400" />
-                                  <span className="truncate">
-                                    {job.region || "Nairobi"}
-                                  </span>
+                                <div className="flex flex-col gap-1 mt-1">
+                                  <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                    <MapPin size={12} />{" "}
+                                    <span>From: {job.region}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-[11px] text-green-600 font-medium">
+                                    <Building2 size={12} />{" "}
+                                    <span>
+                                      Delivered to:{" "}
+                                      {job.center_name || "Assigned Center"}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                               <div className="text-right">

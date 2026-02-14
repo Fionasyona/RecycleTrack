@@ -8,14 +8,15 @@ import {
   DollarSign,
   Loader,
   RefreshCw,
-  ShieldCheck,
-  Trophy,
-  User,
-  XCircle,
   Scale,
+  ShieldCheck, // Used for Withdrawal Tab
+  Smartphone,
+  TrendingUp,
+  Trophy,
   Truck,
-  TrendingUp, // Added for financial icon
-  Wallet, // Added for payouts
+  User,
+  Wallet,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -27,6 +28,7 @@ const AdminDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [history, setHistory] = useState([]);
   const [collectors, setCollectors] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]); // NEW: Withdrawal State
   const [loading, setLoading] = useState(true);
 
   // Manual Verify State
@@ -44,15 +46,18 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [reqRes, colRes, histRes] = await Promise.all([
+      // Added Withdrawal Fetching to Promise.all
+      const [reqRes, colRes, histRes, withRes] = await Promise.all([
         api.get("/users/pickup/pending/"),
         api.get("/users/admin/collectors/"),
         api.get("/users/admin/history/"),
+        api.get("/users/custom-admin/withdrawals/pending/"),
       ]);
 
       setRequests(Array.isArray(reqRes) ? reqRes : reqRes.data || []);
       setCollectors(Array.isArray(colRes) ? colRes : colRes.data || []);
       setHistory(Array.isArray(histRes) ? histRes : histRes.data || []);
+      setWithdrawals(Array.isArray(withRes) ? withRes : withRes.data || []);
     } catch (error) {
       console.error("Failed to load dashboard data", error);
     } finally {
@@ -64,8 +69,7 @@ const AdminDashboard = () => {
     fetchData();
   }, []);
 
-  // ... (Keep existing ACTIONS: handleVerifyRequest, handleRejectRequest, handleAssign, etc. unchanged)
-  // 2. ACTIONS
+  // --- EXISTING ACTIONS (Verify, Reject, Assign) ---
   const handleVerifyRequest = async (requestId) => {
     const toastId = toast.loading("Verifying pickup...");
     try {
@@ -114,6 +118,45 @@ const AdminDashboard = () => {
     }
   };
 
+  // --- NEW ACTIONS: WITHDRAWALS ---
+  const handleApproveWithdrawal = async (id, amount) => {
+    if (
+      !window.confirm(
+        `Approve withdrawal of KES ${amount}? This will initiate M-Pesa transfer.`,
+      )
+    )
+      return;
+
+    const toastId = toast.loading("Processing payout...");
+    try {
+      await api.post(`/custom-admin/withdrawals/${id}/approve/`);
+      toast.success("Withdrawal Approved & Paid!", { id: toastId });
+      // Optimistic Update
+      setWithdrawals((prev) => prev.filter((req) => req.id !== id));
+    } catch (error) {
+      console.error(error);
+      toast.error(error.response?.data?.error || "Approval failed.", {
+        id: toastId,
+      });
+    }
+  };
+
+  const handleRejectWithdrawal = async (id) => {
+    const reason = window.prompt("Enter rejection reason (optional):");
+    if (reason === null) return;
+
+    const toastId = toast.loading("Rejecting request...");
+    try {
+      await api.post(`/custom-admin/withdrawals/${id}/reject/`, { reason });
+      toast.success("Request rejected. Points refunded.", { id: toastId });
+      setWithdrawals((prev) => prev.filter((req) => req.id !== id));
+    } catch (error) {
+      console.error(error);
+      toast.error("Rejection failed.", { id: toastId });
+    }
+  };
+
+  // --- MANUAL VERIFY ---
   const handleManualVerify = async (e) => {
     e.preventDefault();
     if (!manualEmail) return toast.error("Enter an email");
@@ -165,11 +208,6 @@ const AdminDashboard = () => {
     0,
   );
 
-  // Logic: Driver gets Base (100) + 20% Commission
-  // Company keeps 80% of Bill - Base (This is a simplified assumption based on your billing logic)
-  // Actually, typically: User pays Bill. Driver keeps (Bill * 0.2) + 100.
-  // Wait, if Driver keeps 20%, Company keeps 80%. But Driver also gets fixed 100.
-  // Let's visualize EXACTLY what you pay out.
   const totalDriverPayouts = history.reduce((acc, curr) => {
     const bill = parseFloat(curr.billed_amount) || 0;
     const payout = 100 + bill * 0.2; // Base + 20%
@@ -178,14 +216,9 @@ const AdminDashboard = () => {
 
   const netCompanyRevenue = totalRevenue - totalDriverPayouts;
 
-  // Calculate stats per driver for the leaderboard
   const driverStats = collectors
     .map((driver) => {
-      const driverJobs = history.filter((h) => h.collector === driver.id); // Assuming ID match
-      // If API returns collector as ID, simple match. If object, use .id
-      // Let's play safe and match somewhat loosely or assume your serializer returns ID
-      // Actually, your serializer probably returns ID. If not, adjustments needed.
-
+      const driverJobs = history.filter((h) => h.collector === driver.id);
       const earnings = driverJobs.reduce((acc, job) => {
         const bill = parseFloat(job.billed_amount) || 0;
         return acc + (100 + bill * 0.2);
@@ -197,7 +230,7 @@ const AdminDashboard = () => {
         earnings: earnings,
       };
     })
-    .sort((a, b) => b.earnings - a.earnings); // Sort highest earner first
+    .sort((a, b) => b.earnings - a.earnings);
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6 md:space-y-8 relative">
@@ -290,15 +323,18 @@ const AdminDashboard = () => {
         <div className="grid grid-cols-2 md:flex gap-3 md:gap-4 w-full md:w-auto">
           <div className="bg-green-700 px-4 py-3 rounded-xl border border-green-600 text-center">
             <p className="text-[10px] md:text-xs text-green-200 uppercase tracking-wider font-bold">
-              Active
+              Active Pickups
             </p>
             <p className="text-xl md:text-2xl font-bold">{requests.length}</p>
           </div>
           <div className="bg-green-900/50 px-4 py-3 rounded-xl border border-green-700 text-center">
+            {/* NEW: Withdrawal Counter */}
             <p className="text-[10px] md:text-xs text-green-200 uppercase tracking-wider font-bold">
-              History
+              Payout Requests
             </p>
-            <p className="text-xl md:text-2xl font-bold">{history.length}</p>
+            <p className="text-xl md:text-2xl font-bold">
+              {withdrawals.length}
+            </p>
           </div>
         </div>
       </div>
@@ -306,11 +342,11 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
         <div className="lg:col-span-2 space-y-6">
           {/* TABS */}
-          <div className="flex justify-between items-end border-b border-gray-200 pb-1">
+          <div className="flex justify-between items-end border-b border-gray-200 pb-1 overflow-x-auto">
             <div className="flex gap-4">
               <button
                 onClick={() => setActiveTab("queue")}
-                className={`flex items-center gap-2 pb-2 px-2 font-bold ${
+                className={`flex items-center gap-2 pb-2 px-2 font-bold whitespace-nowrap ${
                   activeTab === "queue"
                     ? "text-green-600 border-b-2 border-green-600"
                     : "text-gray-400 hover:text-gray-600"
@@ -318,9 +354,27 @@ const AdminDashboard = () => {
               >
                 <Clock size={18} /> Active Queue
               </button>
+
+              {/* NEW TAB BUTTON */}
+              <button
+                onClick={() => setActiveTab("withdrawals")}
+                className={`flex items-center gap-2 pb-2 px-2 font-bold whitespace-nowrap ${
+                  activeTab === "withdrawals"
+                    ? "text-green-600 border-b-2 border-green-600"
+                    : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                <Wallet size={18} /> Withdrawals
+                {withdrawals.length > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                    {withdrawals.length}
+                  </span>
+                )}
+              </button>
+
               <button
                 onClick={() => setActiveTab("history")}
-                className={`flex items-center gap-2 pb-2 px-2 font-bold ${
+                className={`flex items-center gap-2 pb-2 px-2 font-bold whitespace-nowrap ${
                   activeTab === "history"
                     ? "text-green-600 border-b-2 border-green-600"
                     : "text-gray-400 hover:text-gray-600"
@@ -330,7 +384,7 @@ const AdminDashboard = () => {
               </button>
               <button
                 onClick={() => setActiveTab("analytics")}
-                className={`flex items-center gap-2 pb-2 px-2 font-bold ${
+                className={`flex items-center gap-2 pb-2 px-2 font-bold whitespace-nowrap ${
                   activeTab === "analytics"
                     ? "text-green-600 border-b-2 border-green-600"
                     : "text-gray-400 hover:text-gray-600"
@@ -479,6 +533,103 @@ const AdminDashboard = () => {
                         </div>
                       ),
                     )
+                  )}
+                </div>
+              )}
+
+              {/* NEW TAB: WITHDRAWALS CONTENT */}
+              {activeTab === "withdrawals" && (
+                <div className="space-y-4">
+                  {withdrawals.length === 0 ? (
+                    <div className="text-center p-12 bg-white rounded-xl border border-gray-100">
+                      <CheckCircle className="w-10 h-10 text-green-200 mx-auto mb-3" />
+                      <h3 className="text-lg font-medium text-gray-900">
+                        All caught up!
+                      </h3>
+                      <p className="text-gray-500">
+                        No pending withdrawal requests.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 uppercase tracking-wider text-xs">
+                          <tr>
+                            <th className="p-4 font-semibold">User</th>
+                            <th className="p-4 font-semibold">Amount</th>
+                            <th className="p-4 font-semibold hidden md:table-cell">
+                              Phone
+                            </th>
+                            <th className="p-4 font-semibold text-right">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {withdrawals.map((req) => (
+                            <tr
+                              key={req.id}
+                              className="hover:bg-gray-50 transition"
+                            >
+                              <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+                                    <User size={14} />
+                                  </div>
+                                  <div>
+                                    <p className="font-bold text-gray-900">
+                                      {req.user_name || "Resident"}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      {req.user_email}
+                                    </p>
+                                    <div className="md:hidden flex items-center gap-1 text-xs text-gray-500 mt-1">
+                                      <Smartphone size={10} />{" "}
+                                      {req.mpesa_number}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <p className="font-bold text-gray-900">
+                                  KES {req.amount}
+                                </p>
+                                <p className="text-xs text-orange-500 font-medium">
+                                  -{req.points_used} pts
+                                </p>
+                              </td>
+                              <td className="p-4 hidden md:table-cell">
+                                <div className="flex items-center gap-2 text-gray-700">
+                                  <Smartphone
+                                    size={14}
+                                    className="text-gray-400"
+                                  />
+                                  <span className="font-mono">
+                                    {req.mpesa_number}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-4 text-right space-x-2">
+                                <button
+                                  onClick={() => handleRejectWithdrawal(req.id)}
+                                  className="px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-bold transition"
+                                >
+                                  Reject
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    handleApproveWithdrawal(req.id, req.amount)
+                                  }
+                                  className="px-3 py-1.5 text-white bg-green-600 hover:bg-green-700 rounded-lg text-xs font-bold shadow-sm transition inline-flex items-center gap-1"
+                                >
+                                  <CheckCircle size={14} /> Pay
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               )}

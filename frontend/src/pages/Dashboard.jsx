@@ -151,7 +151,7 @@ const Dashboard = () => {
     return groups;
   };
 
-  // --- NEW: Handle Withdrawal ---
+  // --- UPDATED: Handle Withdrawal Request ---
   const handleWithdraw = async () => {
     const points = profile.redeemable_points || 0;
     const amount = (points * 0.3).toFixed(2); // Assuming 1 point = 0.3 KES
@@ -162,29 +162,34 @@ const Dashboard = () => {
       return;
     }
 
-    if (!window.confirm(`Withdraw KES ${amount} to your M-Pesa number?`))
+    // UPDATED: Confirmation message clarifies this is a REQUEST, not immediate
+    if (
+      !window.confirm(
+        `Submit a request to withdraw KES ${amount}? \n\nThis requires Admin approval before funds are sent to your M-Pesa.`,
+      )
+    )
       return;
 
-    const toastId = toast.loading("Processing Withdrawal...");
+    const toastId = toast.loading("Submitting withdrawal request...");
 
     try {
-      // NOTE: Ensure this endpoint exists in your Django backend!
+      // NOTE: Ensure your backend creates a 'Pending' withdrawal record here
       await api.post("/users/withdraw/initiate/", {
         amount: amount,
         phone: profile.phone || currentUser.phone,
       });
 
-      toast.success("Withdrawal initiated! Check your phone.", { id: toastId });
+      // UPDATED: Success message
+      toast.success("Request sent! Pending Admin approval.", { id: toastId });
 
-      // Refresh profile to update points balance immediately
+      // Refresh profile to update points balance (if backend deducts immediately)
       const profileRes = await api.get("/users/profile/");
       setProfile(profileRes.data || profileRes);
     } catch (error) {
       console.error("Withdraw Error", error);
-      toast.error(
-        error.response?.data?.error || "Withdrawal failed. Try again.",
-        { id: toastId },
-      );
+      toast.error(error.response?.data?.error || "Request failed. Try again.", {
+        id: toastId,
+      });
     }
   };
 
@@ -327,7 +332,7 @@ const Dashboard = () => {
             title={
               (profile.redeemable_points || 0) < 100
                 ? "Minimum 100 points required to withdraw"
-                : "Withdraw to M-Pesa"
+                : "Request Withdrawal"
             }
           >
             <Wallet size={16} />
