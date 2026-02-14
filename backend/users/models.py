@@ -79,11 +79,30 @@ class WalletTransaction(models.Model):
     def __str__(self):
         return f"{self.transaction_type} - KES {self.amount} - {self.status}"
 
+# --- NEW: WITHDRAWAL REQUEST MODEL ---
+class WithdrawalRequest(models.Model):
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('paid', 'Paid'),
+    )
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='withdrawals')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    mpesa_number = models.CharField(max_length=15)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    admin_note = models.TextField(blank=True, null=True) # Reason for rejection
+
+    def __str__(self):
+        return f"{self.user.email} - {self.amount} ({self.status})"
+
 # --- 3. DRIVER PROFILE ---
 class DriverProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='driver_profile')
-    id_no = models.CharField(max_length=20, unique=True)
-    license_no = models.CharField(max_length=20, unique=True)
+    id_no = models.CharField(max_length=20, unique=True, blank=True, null=True) # Made nullable to prevent migration errors
+    license_no = models.CharField(max_length=20, unique=True, blank=True, null=True) # Made nullable
     is_verified = models.BooleanField(default=False)
     total_earned = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
@@ -176,11 +195,10 @@ def create_user_related_models(sender, instance, created, **kwargs):
         if instance.role == 'service_provider':
             DriverProfile.objects.create(
                 user=instance,
-                defaults={
-                    'id_no': f"TEMP-{instance.id}", 
-                    'license_no': f"TEMP-{instance.id}",
-                    'total_earned': 0.00
-                }
+                # Use unique temporary values to prevent unique constraint errors
+                id_no=f"TEMP-{instance.id}-{uuid.uuid4().hex[:6]}", 
+                license_no=f"TEMP-{instance.id}-{uuid.uuid4().hex[:6]}",
+                total_earned=0.00
             )
 
 @receiver(post_save, sender=RecycleUser)

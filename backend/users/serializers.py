@@ -2,7 +2,8 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import PickupRequest, DriverProfile, Notification, Wallet, WalletTransaction
+# UPDATED IMPORTS: Added WithdrawalRequest
+from .models import PickupRequest, DriverProfile, Notification, Wallet, WalletTransaction, WithdrawalRequest
 
 User = get_user_model()
 
@@ -12,7 +13,7 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = ['id', 'message', 'is_read', 'created_at']
 
-# --- 2. WALLET SERIALIZERS (NEW) ---
+# --- 2. WALLET SERIALIZERS ---
 class WalletTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WalletTransaction
@@ -26,17 +27,16 @@ class WalletSerializer(serializers.ModelSerializer):
 
 # --- 3. DRIVER PROFILE SERIALIZER ---
 class DriverProfileSerializer(serializers.ModelSerializer):
-    # Force total_earned to be a Float to ensure frontend shows numbers correctly
     total_earned = serializers.FloatField(read_only=True)
 
     class Meta:
         model = DriverProfile
         fields = ['id_no', 'license_no', 'is_verified', 'total_earned']
 
-# --- 4. USER SERIALIZER (CRITICAL UPDATES) ---
+# --- 4. USER SERIALIZER ---
 class UserSerializer(serializers.ModelSerializer):
     driver_profile = DriverProfileSerializer(read_only=True)
-    wallet_balance = serializers.SerializerMethodField() # Show cash balance
+    wallet_balance = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -45,12 +45,11 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'email', 'password',
             'first_name', 'last_name', 'full_name', 
             'phone', 'role', 
-            'redeemable_points', 'lifetime_points', # UPDATED: 'points' is gone
+            'redeemable_points', 'lifetime_points',
             'badge', 'address', 
             'latitude', 'longitude', 'is_active', 
             'driver_profile', 'wallet_balance'
         ]
-        # Ensure password is required for creation but never sent back in response
         extra_kwargs = {'password': {'write_only': True}}
 
     def get_full_name(self, obj):
@@ -58,13 +57,11 @@ class UserSerializer(serializers.ModelSerializer):
         return name if name else obj.email.split('@')[0]
 
     def get_wallet_balance(self, obj):
-        # Safely get balance if wallet exists
         if hasattr(obj, 'wallet'):
             return float(obj.wallet.balance)
         return 0.00
 
     def create(self, validated_data):
-        # Force email to lowercase and copy it to username.
         if 'email' in validated_data:
             email = validated_data['email'].lower().strip()
             validated_data['email'] = email
@@ -76,7 +73,6 @@ class UserSerializer(serializers.ModelSerializer):
         if password:
             user.set_password(password)
         
-        # Ensure user is active by default so they can log in
         user.is_active = True
         user.save()
         return user
@@ -109,18 +105,30 @@ class PickupRequestSerializer(serializers.ModelSerializer):
     def get_center_name(self, obj):
         return obj.center.name if obj.center else None
 
+# --- NEW: WITHDRAWAL REQUEST SERIALIZER (This was missing) ---
+class WithdrawalRequestSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    points_used = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WithdrawalRequest
+        fields = ['id', 'user_name', 'user_email', 'amount', 'mpesa_number', 'status', 'created_at', 'points_used']
+
+    def get_points_used(self, obj):
+        # Calculate points used based on amount (Amount / 0.3)
+        return int(obj.amount / 0.3)
+
 # --- 6. AUTH SERIALIZER ---
 class CustomTokenObtainPairSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
-        # Normalize email input to lowercase to match stored user data
         email = attrs.get('email', '').lower().strip()
         password = attrs.get('password')
 
         if email and password:
-            # Authenticate using 'email' as the 'username' argument
             user = authenticate(request=self.context.get('request'), username=email, password=password)
 
             if not user:

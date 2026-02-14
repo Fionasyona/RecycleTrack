@@ -13,7 +13,8 @@ from .serializers import (
     UserSerializer, 
     CustomTokenObtainPairSerializer, 
     PickupRequestSerializer, 
-    NotificationSerializer
+    NotificationSerializer,
+    WithdrawalRequestSerializer # NEW: Make sure to create this serializer if not exists
 )
 from .models import (
     RecyclingCenter, 
@@ -22,7 +23,8 @@ from .models import (
     Wallet, 
     WalletTransaction, 
     DriverProfile, 
-    Notification
+    Notification,
+    WithdrawalRequest
 )
 import uuid
 import random 
@@ -414,7 +416,7 @@ def get_collector_history(request):
     history = PickupRequest.objects.filter(collector=request.user, status__in=['paid', 'verified']).order_by('-scheduled_date')
     return Response(PickupRequestSerializer(history, many=True).data)
 
-# --- 6. PAYMENTS & REWARDS (NEW LOGIC) ---
+# --- 6. PAYMENTS, REWARDS & WITHDRAWALS ---
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -476,37 +478,92 @@ def redeem_points(request):
         "wallet_balance": wallet.balance
     })
 
+# --- WITHDRAWALS (Updated Flow) ---
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @transaction.atomic
-def withdraw_cash(request):
-    # NEW: Withdraws Wallet Cash -> M-Pesa
+def initiate_withdrawal(request):
+    # User requests withdrawal -> Points deducted -> Saved as Pending
     user = request.user
-    amount = Decimal(request.data.get('amount', 0))
+    amount = float(request.data.get('amount', 0))
     phone = request.data.get('phone', user.phone)
+
+    # 1. Calculate required points (1 Point = 0.3 KES)
+    required_points = int(amount / 0.3)
+
+    # 2. Validation
+    if user.redeemable_points < required_points:
+        return Response({'error': f'Insufficient points. You need {required_points} pts.'}, status=400)
     
-    if amount < 100:
-        return Response({"error": "Minimum withdrawal is KES 100"}, status=400)
-        
-    wallet, _ = Wallet.objects.get_or_create(user=user)
-    
-    if wallet.balance < amount:
-        return Response({"error": "Insufficient wallet balance"}, status=400)
-        
-    # 1. Deduct from Wallet
-    wallet.balance = F('balance') - amount
-    wallet.save()
-    
-    # 2. Log Transaction
-    WalletTransaction.objects.create(
-        wallet=wallet,
-        transaction_type='withdrawal',
+    if amount < 50:
+        return Response({'error': 'Minimum withdrawal is KES 50'}, status=400)
+
+    # 3. Deduct Points IMMEDIATELY (Prevent double spend)
+    user.redeemable_points = F('redeemable_points') - required_points
+    user.save()
+
+    # 4. Create Withdrawal Request
+    WithdrawalRequest.objects.create(
+        user=user,
         amount=amount,
-        status='completed', # In real app, this would be 'pending' until M-Pesa callback
-        description=f"Withdrawal to {phone}"
+        mpesa_number=phone
     )
+
+    return Response({'message': 'Request submitted for Admin approval.'})
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def get_pending_withdrawals(request):
+    # Admin sees only pending
+    withdrawals = WithdrawalRequest.objects.filter(status='pending').order_by('-created_at')
+    serializer = WithdrawalRequestSerializer(withdrawals, many=True)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+@transaction.atomic
+def approve_withdrawal(request, pk):
+    # Admin approves -> Money sent (Simulated)
+    try:
+        withdrawal = WithdrawalRequest.objects.get(pk=pk)
+    except WithdrawalRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=404)
+
+    if withdrawal.status != 'pending':
+        return Response({'error': 'Request already processed'}, status=400)
+
+    # --- TODO: INTEGRATE B2C M-PESA API HERE ---
     
-    return Response({"message": f"Withdrawal of KES {amount} sent to {phone}."})
+    withdrawal.status = 'paid'
+    withdrawal.save()
+    
+    return Response({'message': 'Approved & Paid'})
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+@transaction.atomic
+def reject_withdrawal(request, pk):
+    # Admin rejects -> Points refunded
+    try:
+        withdrawal = WithdrawalRequest.objects.get(pk=pk)
+    except WithdrawalRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=404)
+
+    if withdrawal.status != 'pending':
+        return Response({'error': 'Request already processed'}, status=400)
+    
+    # Refund Points
+    points_refund = int(withdrawal.amount / 0.3)
+    user = withdrawal.user
+    user.redeemable_points = F('redeemable_points') + points_refund
+    user.save()
+
+    withdrawal.status = 'rejected'
+    withdrawal.admin_note = request.data.get('reason', '')
+    withdrawal.save()
+
+    return Response({'message': 'Rejected & Points Refunded'})
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

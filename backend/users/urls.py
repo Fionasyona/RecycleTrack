@@ -29,6 +29,12 @@ from .views import (
     get_notifications,
     mark_notifications_read,
     bill_collection_job,
+    
+    # NEW IMPORTS
+    initiate_withdrawal,
+    get_pending_withdrawals,
+    approve_withdrawal,
+    reject_withdrawal
 )
 
 urlpatterns = [
@@ -41,6 +47,9 @@ urlpatterns = [
 
     # --- USER: PAYMENT & REVIEWS ---
     path('payment/initiate/', initiate_payment, name='initiate_payment'),
+    
+    # --- NEW: USER WITHDRAWAL REQUEST ---
+    path('withdraw/initiate/', initiate_withdrawal, name='initiate_withdrawal'),
 
     # --- LEADERBOARD ---
     path('leaderboard/', get_leaderboard, name='leaderboard'),
@@ -60,6 +69,11 @@ urlpatterns = [
     path('admin/collectors/create/', create_collector, name='create_collector'),
     path('admin/collectors/<int:collector_id>/delete/', delete_collector, name='delete_collector'),
     path('admin/verify-driver/<int:driver_id>/', verify_driver, name='verify_driver'),
+    
+    # --- NEW: ADMIN WITHDRAWAL MANAGEMENT ---
+    path('custom-admin/withdrawals/pending/', get_pending_withdrawals, name='admin_withdrawals_pending'),
+    path('custom-admin/withdrawals/<int:pk>/approve/', approve_withdrawal, name='admin_withdrawals_approve'),
+    path('custom-admin/withdrawals/<int:pk>/reject/', reject_withdrawal, name='admin_withdrawals_reject'),
 
     # --- DRIVER/COLLECTOR WORKFLOW ---
     path('driver/register-docs/', register_driver_docs, name='register_driver_docs'),
@@ -67,8 +81,6 @@ urlpatterns = [
     path('collector/jobs/', get_collector_jobs, name='collector_jobs'),
     path('collector/confirm/<int:request_id>/', confirm_collection_job, name='confirm_job'),
     path('driver/bill-job/<int:request_id>/', bill_collection_job, name='bill_job'), 
-    
-    # FIX: Removed 'views.' prefix because it is imported directly above
     path('driver/wallet/', get_driver_wallet, name='driver_wallet'),
 
     # --- ADMIN VERIFICATION & Payout ---
