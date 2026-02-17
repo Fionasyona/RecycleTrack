@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   Archive,
+  Calendar,
   CalendarClock,
   CheckCircle,
   LayoutDashboard,
@@ -17,10 +18,14 @@ import {
   User,
   Wallet,
   X,
+  XCircle,
   Phone,
   Mail,
   Coins,
-  Building2, // Added for Center display
+  Building2,
+  Eye,
+  FileText,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
@@ -33,6 +38,12 @@ const CollectorDashboard = () => {
   const [activeTab, setActiveTab] = useState("active");
   const [jobs, setJobs] = useState([]);
   const [history, setHistory] = useState([]);
+  const [allUsers, setAllUsers] = useState([]); // <--- NEW: Store users to find phone numbers
+
+  // --- MODAL STATE ---
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedDetail, setSelectedDetail] = useState(null);
+  const [selectedDetailUser, setSelectedDetailUser] = useState(null); // <--- NEW: Specific user for modal
 
   const [wallet, setWallet] = useState({
     total_earned: 0,
@@ -44,56 +55,49 @@ const CollectorDashboard = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [driverProfile, setDriverProfile] = useState(null);
 
-  const NAIROBI_CENTER = [-1.2921, 36.8219];
-
   // --- DATA FETCHING ---
   const fetchData = async () => {
     setLoading(true);
     try {
+      // Fetch everything in parallel
+      const [jobRes, histRes, walletRes, profileRes, usersRes] =
+        await Promise.all([
+          api.get("/users/collector/jobs/").catch((err) => []),
+          api.get("/users/collector/history/").catch((err) => []),
+          api.get("/users/driver/wallet/").catch((err) => ({})),
+          api.get("/users/profile/").catch((err) => null),
+          api.get("/users/users/").catch((err) => []), // <--- NEW: Fetch Users
+        ]);
+
       // 1. Jobs
-      try {
-        const jobRes = await api.get("/users/collector/jobs/");
-        const jobData = jobRes.data ? jobRes.data : jobRes;
-        setJobs(Array.isArray(jobData) ? jobData : []);
-      } catch (err) {
-        console.error("Jobs Error", err);
-      }
+      const jobData = jobRes.data ? jobRes.data : jobRes;
+      setJobs(Array.isArray(jobData) ? jobData : []);
 
       // 2. History
-      try {
-        const histRes = await api.get("/users/collector/history/");
-        const histData = histRes.data ? histRes.data : histRes;
-        setHistory(Array.isArray(histData) ? histData : []);
-      } catch (err) {
-        console.error("History Error", err);
-      }
+      const histData = histRes.data ? histRes.data : histRes;
+      setHistory(Array.isArray(histData) ? histData : []);
 
       // 3. Wallet
-      try {
-        const walletRes = await api.get("/users/driver/wallet/");
-        const walletData = walletRes.data || walletRes;
-        if (walletData) {
-          setWallet({
-            total_earned: walletData.total_earned || 0,
-            pending_amount: walletData.pending_amount || 0,
-            transactions: Array.isArray(walletData.transactions)
-              ? walletData.transactions
-              : [],
-          });
-        }
-      } catch (err) {
-        console.error("Wallet Error", err);
+      const walletData = walletRes.data || walletRes;
+      if (walletData) {
+        setWallet({
+          total_earned: walletData.total_earned || 0,
+          pending_amount: walletData.pending_amount || 0,
+          transactions: Array.isArray(walletData.transactions)
+            ? walletData.transactions
+            : [],
+        });
       }
 
       // 4. Profile
-      try {
-        const profileRes = await api.get("/users/profile/");
-        setDriverProfile(profileRes.data || profileRes);
-      } catch (err) {
-        console.error("Profile Error", err);
-      }
+      setDriverProfile(profileRes.data || profileRes);
+
+      // 5. Users (For contact lookup)
+      const usersData = usersRes.data ? usersRes.data : usersRes;
+      setAllUsers(Array.isArray(usersData) ? usersData : []);
     } catch (error) {
       console.error("Global Fetch Error", error);
+      toast.error("Error syncing data");
     }
     setLoading(false);
   };
@@ -104,7 +108,10 @@ const CollectorDashboard = () => {
 
   const openGoogleMaps = (lat, lng) => {
     if (!lat || !lng) return toast.error("Coordinates not available");
-    window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank");
+    window.open(
+      `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
+      "_blank",
+    );
   };
 
   const handleBillUser = async (id) => {
@@ -121,10 +128,26 @@ const CollectorDashboard = () => {
       const toastId = toast.loading("Sending bill...");
       await api.patch(`/users/driver/bill-job/${id}/`, { weight });
       toast.success("Bill sent!", { id: toastId });
+      setShowDetailsModal(false);
       fetchData();
     } catch (error) {
       toast.error("Failed to submit bill");
     }
+  };
+
+  // --- DETAILS HANDLER (UPDATED) ---
+  const openDetailsModal = (job) => {
+    setSelectedDetail(job);
+
+    // --- LOOKUP THE USER TO GET PHONE NUMBER ---
+    // We try to find the user in our 'allUsers' list using the user_id from the job
+    const fullUser = allUsers.find(
+      (u) =>
+        u.id === job.user_id || u.id === job.user || u.email === job.user_email,
+    );
+
+    setSelectedDetailUser(fullUser || null);
+    setShowDetailsModal(true);
   };
 
   const groupJobsByAssignmentDate = (items) => {
@@ -182,7 +205,183 @@ const CollectorDashboard = () => {
   );
 
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden">
+    <div className="flex h-screen bg-gray-100 overflow-hidden relative">
+      {/* --- DRIVER VIEW DETAILS MODAL --- */}
+      {showDetailsModal && selectedDetail && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="bg-green-800 p-6 flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Truck className="w-5 h-5 text-green-300" />
+                  Pickup Job #{selectedDetail.id}
+                </h3>
+                <p className="text-green-100 text-sm mt-1 opacity-80">
+                  Full Customer & Waste Details
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition"
+              >
+                <XCircle size={24} />
+              </button>
+            </div>
+
+            {/* Modal Body (Scrollable) */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* SECTION 1: CUSTOMER CONTACT */}
+              <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <User size={14} /> Customer Info
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-bold mb-1">
+                      Customer Name
+                    </p>
+                    <p className="text-gray-900 font-bold text-lg">
+                      {/* Try found user first, then job details */}
+                      {selectedDetailUser?.full_name ||
+                        selectedDetail.user_full_name ||
+                        "Resident"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-bold mb-1">
+                      Contact
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-gray-900 font-bold">
+                        {/* THE FIX: Check found user's phone, then fallback */}
+                        {selectedDetailUser?.phone ||
+                          selectedDetail.user_phone ||
+                          "No Phone"}
+                      </p>
+                      {(selectedDetailUser?.phone ||
+                        selectedDetail.user_phone) && (
+                        <a
+                          href={`tel:${selectedDetailUser?.phone || selectedDetail.user_phone}`}
+                          className="bg-green-500 text-white p-1.5 rounded-full hover:bg-green-600 shadow-sm"
+                          title="Call Customer"
+                        >
+                          <Phone size={14} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: LOGISTICS */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-gray-100 pb-2">
+                  <MapPin size={14} /> Logistics
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* From (User) */}
+                  <div className="bg-gray-50 p-4 rounded-xl">
+                    <p className="text-xs text-gray-400 uppercase font-bold mb-1">
+                      Pickup Location
+                    </p>
+                    <p className="text-gray-800 font-bold text-sm leading-snug">
+                      {selectedDetail.pickup_address || selectedDetail.region}
+                    </p>
+                    {selectedDetail.latitude && (
+                      <button
+                        onClick={() =>
+                          openGoogleMaps(
+                            selectedDetail.latitude,
+                            selectedDetail.longitude,
+                          )
+                        }
+                        className="mt-2 text-xs text-blue-600 font-bold flex items-center hover:underline"
+                      >
+                        <Navigation size={12} className="mr-1" /> Open Maps
+                      </button>
+                    )}
+                  </div>
+
+                  {/* To (Center) */}
+                  <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                    <p className="text-xs text-green-700 uppercase font-bold mb-1">
+                      Delivery Destination
+                    </p>
+                    <p className="text-green-900 font-bold text-sm leading-snug">
+                      {selectedDetail.center_name || "Any Available Center"}
+                    </p>
+                    <p className="text-xs text-green-600 mt-1">
+                      {selectedDetail.center_address || "Nairobi"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: WASTE DETAILS */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-gray-100 pb-2">
+                  <FileText size={14} /> Waste Info
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-50 p-3 rounded-xl">
+                    <p className="text-xs text-gray-400 font-bold">Type</p>
+                    <p className="font-bold text-gray-800">
+                      {selectedDetail.waste_type}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-xl">
+                    <p className="text-xs text-gray-400 font-bold">Est. Qty</p>
+                    <p className="font-bold text-gray-800">
+                      {selectedDetail.quantity} kg
+                    </p>
+                  </div>
+                </div>
+                {selectedDetail.description && (
+                  <div className="mt-3 bg-yellow-50 p-3 rounded-xl border border-yellow-100">
+                    <p className="text-xs text-yellow-700 font-bold mb-1">
+                      User Notes
+                    </p>
+                    <p className="text-sm text-gray-700 italic">
+                      "{selectedDetail.description}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Waste Image */}
+                {(selectedDetail.image || selectedDetail.waste_image) && (
+                  <div className="mt-4">
+                    <img
+                      src={selectedDetail.image || selectedDetail.waste_image}
+                      alt="Waste"
+                      className="w-full h-40 object-cover rounded-xl border border-gray-200"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 p-5 border-t border-gray-200 shrink-0 flex gap-3">
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition"
+              >
+                Close
+              </button>
+              {selectedDetail.status === "assigned" && (
+                <button
+                  onClick={() => handleBillUser(selectedDetail.id)}
+                  className="flex-1 py-3 bg-green-700 text-white font-bold rounded-xl hover:bg-green-800 shadow-lg shadow-green-200 transition flex items-center justify-center gap-2"
+                >
+                  <Scale size={18} /> Weigh & Bill
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SIDEBAR */}
       {isSidebarOpen && (
         <div
@@ -371,6 +570,17 @@ const CollectorDashboard = () => {
                                         </td>
                                         <td className="p-4">
                                           <div className="flex gap-2">
+                                            {/* VIEW DETAILS BUTTON (NEW) */}
+                                            <button
+                                              onClick={() =>
+                                                openDetailsModal(job)
+                                              }
+                                              className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 border border-gray-200 transition-colors"
+                                              title="View Full Details"
+                                            >
+                                              <Eye size={18} />
+                                            </button>
+
                                             {/* Route to Resident */}
                                             <button
                                               onClick={() =>
@@ -383,20 +593,6 @@ const CollectorDashboard = () => {
                                               title="Route to Resident"
                                             >
                                               <Navigation size={18} />
-                                            </button>
-
-                                            {/* Route to Recycling Center */}
-                                            <button
-                                              onClick={() =>
-                                                openGoogleMaps(
-                                                  job.center_latitude,
-                                                  job.center_longitude,
-                                                )
-                                              }
-                                              className="p-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
-                                              title="Route to Recycling Center"
-                                            >
-                                              <Building2 size={18} />
                                             </button>
 
                                             {job.status === "assigned" && (

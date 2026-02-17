@@ -6,11 +6,18 @@ import {
   CheckCircle,
   Clock,
   DollarSign,
+  Eye,
   Loader,
+  Map,
+  MapPin,
+  Navigation,
+  Phone,
+  PieChart,
   RefreshCw,
   Scale,
-  ShieldCheck, // Used for Withdrawal Tab
+  ShieldCheck,
   Smartphone,
+  Store,
   TrendingUp,
   Trophy,
   Truck,
@@ -20,7 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { api } from "../services/api";
+import { api, centerAPI } from "../services/api";
 
 const AdminDashboard = () => {
   // --- STATE ---
@@ -28,7 +35,9 @@ const AdminDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [history, setHistory] = useState([]);
   const [collectors, setCollectors] = useState([]);
-  const [withdrawals, setWithdrawals] = useState([]); // NEW: Withdrawal State
+  const [withdrawals, setWithdrawals] = useState([]); // Pending withdrawals
+  const [allUsers, setAllUsers] = useState([]);
+  const [allCenters, setAllCenters] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Manual Verify State
@@ -37,29 +46,47 @@ const AdminDashboard = () => {
   const [manualLoading, setManualLoading] = useState(false);
   const [lastSuccess, setLastSuccess] = useState(null);
 
-  // Assignment State
+  // Assignment Modal State
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [selectedCollector, setSelectedCollector] = useState("");
+
+  // --- VIEW DETAILS MODAL STATE ---
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedDetail, setSelectedDetail] = useState(null);
+  const [selectedDetailUser, setSelectedDetailUser] = useState(null);
+  const [selectedDetailCenter, setSelectedDetailCenter] = useState(null);
 
   // 1. FETCH DATA
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Added Withdrawal Fetching to Promise.all
-      const [reqRes, colRes, histRes, withRes] = await Promise.all([
-        api.get("/users/pickup/pending/"),
-        api.get("/users/admin/collectors/"),
-        api.get("/users/admin/history/"),
-        api.get("/users/custom-admin/withdrawals/pending/"),
-      ]);
+      const [reqRes, colRes, histRes, withRes, usersRes, centersRes] =
+        await Promise.all([
+          api.get("/users/pickup/pending/"),
+          api.get("/users/admin/collectors/"),
+          api.get("/users/admin/history/"),
+          api.get("/users/custom-admin/withdrawals/pending/"),
+          api.get("/users/users/"),
+          centerAPI.getAll(),
+        ]);
 
-      setRequests(Array.isArray(reqRes) ? reqRes : reqRes.data || []);
-      setCollectors(Array.isArray(colRes) ? colRes : colRes.data || []);
-      setHistory(Array.isArray(histRes) ? histRes : histRes.data || []);
-      setWithdrawals(Array.isArray(withRes) ? withRes : withRes.data || []);
+      const extractData = (res) => {
+        if (Array.isArray(res)) return res;
+        if (res?.data && Array.isArray(res.data)) return res.data;
+        if (res?.results && Array.isArray(res.results)) return res.results;
+        return [];
+      };
+
+      setRequests(extractData(reqRes));
+      setCollectors(extractData(colRes));
+      setHistory(extractData(histRes));
+      setWithdrawals(extractData(withRes));
+      setAllUsers(extractData(usersRes));
+      setAllCenters(extractData(centersRes));
     } catch (error) {
       console.error("Failed to load dashboard data", error);
+      toast.error("Error loading data.");
     } finally {
       setLoading(false);
     }
@@ -69,7 +96,7 @@ const AdminDashboard = () => {
     fetchData();
   }, []);
 
-  // --- EXISTING ACTIONS (Verify, Reject, Assign) ---
+  // --- ACTIONS ---
   const handleVerifyRequest = async (requestId) => {
     const toastId = toast.loading("Verifying pickup...");
     try {
@@ -118,23 +145,39 @@ const AdminDashboard = () => {
     }
   };
 
-  // --- NEW ACTIONS: WITHDRAWALS ---
-  const handleApproveWithdrawal = async (id, amount) => {
-    if (
-      !window.confirm(
-        `Approve withdrawal of KES ${amount}? This will initiate M-Pesa transfer.`,
-      )
-    )
-      return;
+  const openDetailsModal = (req) => {
+    setSelectedDetail(req);
 
+    // Find User (For Phone Number)
+    const fullUser = allUsers.find(
+      (u) =>
+        u.id === req.user_id || u.id === req.user || u.email === req.user_email,
+    );
+    setSelectedDetailUser(fullUser || null);
+
+    // Find Center (Extremely Aggressive Matching)
+    const foundCenter = allCenters.find((c) => {
+      if (req.center && c.id == req.center) return true;
+      if (req.center_id && c.id == req.center_id) return true;
+      if (req.recycling_center && c.id == req.recycling_center) return true;
+      if (req.center_name && c.name === req.center_name) return true;
+      if (typeof req.center === "string" && c.name === req.center) return true;
+      return false;
+    });
+    setSelectedDetailCenter(foundCenter || null);
+
+    setShowDetailsModal(true);
+  };
+
+  // --- WITHDRAWAL ACTIONS ---
+  const handleApproveWithdrawal = async (id, amount) => {
+    if (!window.confirm(`Approve withdrawal of KES ${amount}?`)) return;
     const toastId = toast.loading("Processing payout...");
     try {
-      await api.post(`/custom-admin/withdrawals/${id}/approve/`);
+      await api.post(`/users/custom-admin/withdrawals/${id}/approve/`);
       toast.success("Withdrawal Approved & Paid!", { id: toastId });
-      // Optimistic Update
       setWithdrawals((prev) => prev.filter((req) => req.id !== id));
     } catch (error) {
-      console.error(error);
       toast.error(error.response?.data?.error || "Approval failed.", {
         id: toastId,
       });
@@ -144,14 +187,14 @@ const AdminDashboard = () => {
   const handleRejectWithdrawal = async (id) => {
     const reason = window.prompt("Enter rejection reason (optional):");
     if (reason === null) return;
-
     const toastId = toast.loading("Rejecting request...");
     try {
-      await api.post(`/custom-admin/withdrawals/${id}/reject/`, { reason });
+      await api.post(`/users/custom-admin/withdrawals/${id}/reject/`, {
+        reason,
+      });
       toast.success("Request rejected. Points refunded.", { id: toastId });
       setWithdrawals((prev) => prev.filter((req) => req.id !== id));
     } catch (error) {
-      console.error(error);
       toast.error("Rejection failed.", { id: toastId });
     }
   };
@@ -169,6 +212,7 @@ const AdminDashboard = () => {
       toast.success("Manual Verification Successful!");
       setLastSuccess(res.data);
       setManualEmail("");
+      fetchData();
     } catch (error) {
       toast.error(error.response?.data?.error || "Error verifying user.");
     } finally {
@@ -202,7 +246,7 @@ const AdminDashboard = () => {
     return driver ? driver.full_name : "Unknown Driver";
   };
 
-  // --- ANALYTICS HELPERS ---
+  // --- FINANCIAL CALCULATIONS ---
   const totalRevenue = history.reduce(
     (acc, curr) => acc + (parseFloat(curr.billed_amount) || 0),
     0,
@@ -210,11 +254,21 @@ const AdminDashboard = () => {
 
   const totalDriverPayouts = history.reduce((acc, curr) => {
     const bill = parseFloat(curr.billed_amount) || 0;
-    const payout = 100 + bill * 0.2; // Base + 20%
-    return acc + payout;
+    return acc + (100 + bill * 0.2);
   }, 0);
 
-  const netCompanyRevenue = totalRevenue - totalDriverPayouts;
+  const wasteStats = history.reduce((acc, curr) => {
+    const type = curr.waste_type || "Other";
+    const weight = parseFloat(curr.actual_quantity) || 0;
+    if (!acc[type]) acc[type] = 0;
+    acc[type] += weight;
+    return acc;
+  }, {});
+
+  const totalWeightRecycled = Object.values(wasteStats).reduce(
+    (a, b) => a + b,
+    0,
+  );
 
   const driverStats = collectors
     .map((driver) => {
@@ -223,7 +277,6 @@ const AdminDashboard = () => {
         const bill = parseFloat(job.billed_amount) || 0;
         return acc + (100 + bill * 0.2);
       }, 0);
-
       return {
         name: driver.full_name,
         jobs: driverJobs.length,
@@ -234,7 +287,166 @@ const AdminDashboard = () => {
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6 md:space-y-8 relative">
-      {/* MODAL FOR ASSIGNMENT (Unchanged) */}
+      {/* ... (Modals remain unchanged) ... */}
+      {showDetailsModal && selectedDetail && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-green-800 p-6 flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <User className="w-5 h-5 text-green-300" />
+                  Request #{selectedDetail.id}
+                </h3>
+                <p className="text-green-100 text-sm mt-1 opacity-80">
+                  Detailed view of pickup request
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition"
+              >
+                <XCircle size={24} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-8">
+              <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <User size={14} /> User Profile Contact
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-bold mb-1">
+                      Full Name
+                    </p>
+                    <p className="text-gray-900 font-bold text-lg">
+                      {selectedDetailUser?.full_name ||
+                        selectedDetail.user_full_name ||
+                        "Guest User"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-bold mb-1">
+                      Phone Number
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-gray-900 font-bold text-lg">
+                        {selectedDetailUser?.phone ||
+                          selectedDetail.user_phone ||
+                          "No Number Available"}
+                      </p>
+                      {(selectedDetailUser?.phone ||
+                        selectedDetail.user_phone) && (
+                        <a
+                          href={`tel:${selectedDetailUser?.phone || selectedDetail.user_phone}`}
+                          className="bg-green-500 text-white p-1.5 rounded-full hover:bg-green-600 shadow-sm"
+                          title="Call Now"
+                        >
+                          <Phone size={14} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-gray-100 pb-2">
+                  <Truck size={14} /> Pickup Details (User Input)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 p-4 rounded-xl">
+                    <p className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
+                      <RefreshCw size={10} /> Waste Type
+                    </p>
+                    <p className="text-gray-800 font-bold text-lg">
+                      {selectedDetail.waste_type}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-xl">
+                    <p className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
+                      <Calendar size={10} /> Scheduled Date
+                    </p>
+                    <p className="text-gray-800 font-bold text-lg">
+                      {selectedDetail.scheduled_date
+                        ? new Date(selectedDetail.scheduled_date).toDateString()
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-xl col-span-1 md:col-span-2">
+                    <p className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
+                      <Store size={10} /> Preferred Recycling Center
+                    </p>
+                    <p className="text-blue-800 font-bold text-lg">
+                      {selectedDetailCenter?.name ||
+                        selectedDetail.center_name ||
+                        selectedDetail.center ||
+                        "Any Available Center"}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-xl">
+                    <p className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
+                      <Map size={10} /> Region / Area
+                    </p>
+                    <p className="text-gray-800 font-bold">
+                      {selectedDetail.region || "N/A"}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-xl">
+                    <p className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
+                      <MapPin size={10} /> Street / Landmark
+                    </p>
+                    <p className="text-gray-800 font-bold">
+                      {selectedDetail.pickup_address || "Pinned Location"}
+                    </p>
+                  </div>
+                  {selectedDetail.latitude && selectedDetail.longitude && (
+                    <div className="col-span-1 md:col-span-2 bg-green-50 p-4 rounded-xl border border-green-100 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-green-700 uppercase font-bold mb-1 flex items-center gap-1">
+                          <Navigation size={10} /> GPS Coordinates
+                        </p>
+                        <p className="text-green-900 font-mono text-sm">
+                          {selectedDetail.latitude}, {selectedDetail.longitude}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() =>
+                          window.open(
+                            `https://www.google.com/maps/search/?api=1&query=${selectedDetail.latitude},${selectedDetail.longitude}`,
+                            "_blank",
+                          )
+                        }
+                        className="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 transition shadow-sm"
+                      >
+                        Open Maps
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="bg-gray-50 p-5 border-t border-gray-200 shrink-0 flex gap-3">
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition"
+              >
+                Close
+              </button>
+              {selectedDetail.status === "pending" && (
+                <button
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    openAssignModal(selectedDetail);
+                  }}
+                  className="flex-1 py-3 bg-green-700 text-white font-bold rounded-xl hover:bg-green-800 shadow-lg shadow-green-200 transition"
+                >
+                  Assign Driver
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAssignModal && selectedRequest && (
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
@@ -244,7 +456,6 @@ const AdminDashboard = () => {
             <p className="text-sm text-gray-500 mb-4">
               Select a driver for {selectedRequest.waste_type} pickup.
             </p>
-
             <div className="space-y-2 mb-6 max-h-60 overflow-y-auto">
               {collectors.length === 0 ? (
                 <p className="text-center text-gray-400 text-sm">
@@ -291,7 +502,6 @@ const AdminDashboard = () => {
                 ))
               )}
             </div>
-
             <div className="flex gap-3">
               <button
                 onClick={() => setShowAssignModal(false)}
@@ -328,7 +538,6 @@ const AdminDashboard = () => {
             <p className="text-xl md:text-2xl font-bold">{requests.length}</p>
           </div>
           <div className="bg-green-900/50 px-4 py-3 rounded-xl border border-green-700 text-center">
-            {/* NEW: Withdrawal Counter */}
             <p className="text-[10px] md:text-xs text-green-200 uppercase tracking-wider font-bold">
               Payout Requests
             </p>
@@ -355,7 +564,6 @@ const AdminDashboard = () => {
                 <Clock size={18} /> Active Queue
               </button>
 
-              {/* NEW TAB BUTTON */}
               <button
                 onClick={() => setActiveTab("withdrawals")}
                 className={`flex items-center gap-2 pb-2 px-2 font-bold whitespace-nowrap ${
@@ -390,7 +598,7 @@ const AdminDashboard = () => {
                     : "text-gray-400 hover:text-gray-600"
                 }`}
               >
-                <BarChart3 size={18} /> Financials
+                <BarChart3 size={18} /> Analytics
               </button>
             </div>
           </div>
@@ -428,7 +636,6 @@ const AdminDashboard = () => {
                                 key={req.id}
                                 className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition"
                               >
-                                {/* ... Request Card Content ... */}
                                 <div className="flex justify-between items-start mb-3">
                                   <div className="flex items-center gap-2">
                                     {req.status === "assigned" ? (
@@ -496,6 +703,13 @@ const AdminDashboard = () => {
                                   </div>
                                 </div>
                                 <div className="flex gap-2">
+                                  <button
+                                    onClick={() => openDetailsModal(req)}
+                                    className="bg-gray-100 text-gray-600 p-2 rounded-lg hover:bg-gray-200 border border-gray-200 transition"
+                                    title="View Details"
+                                  >
+                                    <Eye size={16} />
+                                  </button>
                                   {req.status === "pending" && (
                                     <button
                                       onClick={() => openAssignModal(req)}
@@ -537,7 +751,6 @@ const AdminDashboard = () => {
                 </div>
               )}
 
-              {/* NEW TAB: WITHDRAWALS CONTENT */}
               {activeTab === "withdrawals" && (
                 <div className="space-y-4">
                   {withdrawals.length === 0 ? (
@@ -634,7 +847,6 @@ const AdminDashboard = () => {
                 </div>
               )}
 
-              {/* HISTORY TAB */}
               {activeTab === "history" && (
                 <div className="space-y-4">
                   {history.length === 0 ? (
@@ -683,175 +895,123 @@ const AdminDashboard = () => {
                 </div>
               )}
 
-              {/* ANALYTICS & FINANCIALS TAB */}
+              {/* ANALYTICS TAB (UPDATED) */}
               {activeTab === "analytics" && (
-                <div className="space-y-6 animate-fade-in">
-                  {/* 1. FINANCIAL SUMMARY */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-gradient-to-br from-green-700 to-green-900 p-6 rounded-2xl text-white shadow-lg">
-                      <div className="flex justify-between items-start">
+                <div className="space-y-8 animate-fade-in">
+                  {/* Financials Overview */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Gross Revenue Card */}
+                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
                         <div>
-                          <p className="text-green-200 text-xs font-bold uppercase tracking-wider">
-                            Gross Revenue
+                          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                            Total Income
                           </p>
-                          <h3 className="text-3xl font-bold mt-1">
+                          <h3 className="text-2xl font-black text-gray-800 mt-1">
                             KES {totalRevenue.toLocaleString()}
                           </h3>
                         </div>
-                        <div className="bg-white/20 p-2 rounded-lg">
-                          <DollarSign size={24} className="text-white" />
+                        <div className="p-2 bg-green-50 text-green-600 rounded-lg">
+                          <TrendingUp size={20} />
                         </div>
                       </div>
-                      <div className="mt-6 flex gap-4 text-sm">
+                      <div className="text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded inline-block">
+                        +100% Verified Bills
+                      </div>
+                    </div>
+
+                    {/* Operational Spending Card */}
+                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
                         <div>
-                          <p className="text-green-300 text-xs">
+                          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">
                             Driver Payouts
                           </p>
-                          <p className="font-bold">
+                          <h3 className="text-2xl font-black text-gray-800 mt-1">
                             KES {totalDriverPayouts.toLocaleString()}
-                          </p>
+                          </h3>
                         </div>
-                        <div className="w-px bg-white/20"></div>
-                        <div>
-                          <p className="text-green-300 text-xs">Net Profit</p>
-                          <p className="font-bold">
-                            KES {netCompanyRevenue.toLocaleString()}
-                          </p>
+                        <div className="p-2 bg-orange-50 text-orange-600 rounded-lg">
+                          <Truck size={20} />
                         </div>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Operational Cost (Base + Comm.)
                       </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-center">
-                      <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                        <Trophy size={18} className="text-yellow-500" /> Top
-                        Performing Drivers
-                      </h3>
-                      <div className="space-y-3 overflow-y-auto max-h-40 pr-2">
-                        {driverStats.length === 0 ? (
-                          <p className="text-sm text-gray-400 italic">
-                            No data yet.
+                    {/* Net Profit Card */}
+                    <div className="bg-gradient-to-br from-green-700 to-green-900 p-6 rounded-2xl text-white shadow-lg">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <p className="text-xs text-green-200 font-bold uppercase tracking-wider">
+                            Net Profit
                           </p>
-                        ) : (
-                          driverStats.map((d, i) => (
-                            <div
-                              key={i}
-                              className="flex justify-between items-center text-sm"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${i === 0 ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-600"}`}
-                                >
-                                  {i + 1}
-                                </div>
-                                <span className="font-medium text-gray-700">
-                                  {d.name}
+                          <h3 className="text-3xl font-black mt-1">
+                            KES{" "}
+                            {(
+                              totalRevenue - totalDriverPayouts
+                            ).toLocaleString()}
+                          </h3>
+                        </div>
+                        <div className="p-2 bg-white/10 rounded-lg">
+                          <DollarSign size={20} />
+                        </div>
+                      </div>
+                      <p className="text-xs text-green-200 opacity-80">
+                        *Excludes User Reward Withdrawals
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Waste Composition Section (Full Width Now) */}
+                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
+                      <PieChart size={18} className="text-blue-500" /> Waste
+                      Composition (Recycled)
+                    </h3>
+
+                    <div className="space-y-5">
+                      {Object.keys(wasteStats).length === 0 ? (
+                        <p className="text-gray-400 italic text-center py-8">
+                          No recycling data yet.
+                        </p>
+                      ) : (
+                        Object.entries(wasteStats).map(([type, weight]) => {
+                          const percentage =
+                            (weight / totalWeightRecycled) * 100;
+                          const colors = {
+                            Plastic: "bg-yellow-400",
+                            Glass: "bg-green-400",
+                            Paper: "bg-blue-400",
+                            Metal: "bg-gray-400",
+                            "E-waste": "bg-red-400",
+                            Organic: "bg-green-600",
+                          };
+                          const barColor = colors[type] || "bg-green-600";
+
+                          return (
+                            <div key={type}>
+                              <div className="flex justify-between text-sm mb-1">
+                                <span className="font-bold text-gray-700">
+                                  {type}
+                                </span>
+                                <span className="font-bold text-gray-900">
+                                  {weight.toFixed(2)} kg
                                 </span>
                               </div>
-                              <div className="text-right">
-                                <p className="font-bold text-gray-900">
-                                  KES {d.earnings.toLocaleString()}
-                                </p>
-                                <p className="text-[10px] text-gray-400">
-                                  {d.jobs} Jobs
-                                </p>
+                              <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                                <div
+                                  className={`h-2.5 rounded-full ${barColor}`}
+                                  style={{ width: `${percentage}%` }}
+                                ></div>
                               </div>
+                              <p className="text-xs text-gray-400 mt-1 text-right">
+                                {percentage.toFixed(1)}% of total
+                              </p>
                             </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 2. EXPENDITURE BREAKDOWN (VISUAL BAR) */}
-                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                      <TrendingUp size={18} className="text-blue-600" /> Revenue
-                      Analysis
-                    </h3>
-
-                    <div className="mb-2 flex justify-between text-sm font-medium text-gray-600">
-                      <span>Total Revenue Distributed</span>
-                      <span>100%</span>
-                    </div>
-                    <div className="w-full h-6 bg-gray-100 rounded-full overflow-hidden flex mb-4">
-                      {/* Driver Payout Bar */}
-                      <div
-                        className="h-full bg-blue-500 hover:bg-blue-600 transition-all cursor-help"
-                        style={{
-                          width: `${(totalDriverPayouts / (totalRevenue || 1)) * 100}%`,
-                        }}
-                        title={`Drivers Paid: ${((totalDriverPayouts / (totalRevenue || 1)) * 100).toFixed(1)}%`}
-                      ></div>
-                      {/* Profit Bar */}
-                      <div
-                        className="h-full bg-green-500 hover:bg-green-600 transition-all cursor-help"
-                        style={{
-                          width: `${(netCompanyRevenue / (totalRevenue || 1)) * 100}%`,
-                        }}
-                        title={`Company Net: ${((netCompanyRevenue / (totalRevenue || 1)) * 100).toFixed(1)}%`}
-                      ></div>
-                    </div>
-
-                    <div className="flex gap-6 text-sm">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                        <span className="text-gray-600">
-                          Driver Payouts (Est. 80% + Fees)
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                        <span className="text-gray-600">Company Revenue</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 3. Waste Composition (Existing Chart logic moved here) */}
-                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                    <h3 className="font-bold text-gray-800 mb-6">
-                      Waste Type Breakdown
-                    </h3>
-                    <div className="space-y-4">
-                      {Object.entries(
-                        history.reduce((acc, curr) => {
-                          acc[curr.waste_type] =
-                            (acc[curr.waste_type] || 0) + 1;
-                          return acc;
-                        }, {}),
-                      ).map(([type, count]) => {
-                        const total = history.length || 1;
-                        const percentage = Math.round((count / total) * 100);
-                        return (
-                          <div key={type}>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="font-bold text-gray-700">
-                                {type}
-                              </span>
-                              <span className="text-gray-500">
-                                {count} Jobs ({percentage}%)
-                              </span>
-                            </div>
-                            <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${
-                                  type === "Plastic"
-                                    ? "bg-blue-500"
-                                    : type === "Metal"
-                                      ? "bg-orange-500"
-                                      : type === "Glass"
-                                        ? "bg-teal-500"
-                                        : "bg-green-500"
-                                }`}
-                                style={{ width: `${percentage}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {history.length === 0 && (
-                        <p className="text-gray-400 text-center italic">
-                          No data to display yet.
-                        </p>
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -861,57 +1021,110 @@ const AdminDashboard = () => {
           )}
         </div>
 
-        {/* RIGHT COL: MANUAL (Unchanged) */}
+        {/* RIGHT COL: SIDEBAR CONTENT */}
         <div className="space-y-6">
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-            <h2 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <RefreshCw size={18} className="text-gray-500" /> Manual Entry
-            </h2>
-            <form onSubmit={handleManualVerify} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-gray-400 uppercase">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={manualEmail}
-                  onChange={(e) => setManualEmail(e.target.value)}
-                  className="w-full p-2 border rounded-lg outline-none focus:ring-2 ring-green-500"
-                  placeholder="resident@email.com"
-                />
+          {activeTab === "analytics" ? (
+            /* SHOW TOP PERFORMERS ONLY IN ANALYTICS */
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm h-fit">
+              <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
+                <Trophy size={18} className="text-yellow-500" /> Top Performers
+              </h3>
+              <div className="space-y-4">
+                {driverStats.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic">
+                    No driver data.
+                  </p>
+                ) : (
+                  driverStats.slice(0, 5).map((d, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition"
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${i === 0 ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-600"}`}
+                      >
+                        {i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="font-bold text-gray-800 text-sm truncate"
+                          title={d.name}
+                        >
+                          {d.name}
+                        </p>
+                        <div className="flex justify-between items-center mt-0.5">
+                          <p className="text-xs text-gray-500">{d.jobs} Jobs</p>
+                          <p className="text-xs font-bold text-green-600 whitespace-nowrap">
+                            KES{" "}
+                            {d.earnings.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-              <div>
-                <label className="text-xs font-bold text-gray-400 uppercase">
-                  Type
-                </label>
-                <select
-                  value={manualType}
-                  onChange={(e) => setManualType(e.target.value)}
-                  className="w-full p-2 border rounded-lg bg-white"
-                >
-                  <option value="Plastic">Plastic (20pts)</option>
-                  <option value="Glass">Glass (15pts)</option>
-                  <option value="Paper">Paper (10pts)</option>
-                  <option value="Metal">Metal (30pts)</option>
-                  <option value="E-waste">E-waste (50pts)</option>
-                </select>
-              </div>
-              <button
-                disabled={manualLoading}
-                className="w-full py-3 bg-gray-800 text-white font-bold rounded-lg hover:bg-black"
-              >
-                {manualLoading ? "Processing..." : "Confirm Drop-off"}
-              </button>
-            </form>
-          </div>
-          {lastSuccess && (
-            <div className="bg-green-50 border border-green-200 p-4 rounded-xl">
-              <div className="flex items-center gap-2 mb-1">
-                <Trophy size={16} className="text-yellow-500" />
-                <span className="font-bold text-green-900">Success!</span>
-              </div>
-              <p className="text-sm text-green-700">{lastSuccess.message}</p>
             </div>
+          ) : (
+            /* SHOW MANUAL ENTRY IN ALL OTHER TABS */
+            <>
+              <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+                <h2 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <RefreshCw size={18} className="text-gray-500" /> Manual Entry
+                </h2>
+                <form onSubmit={handleManualVerify} className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={manualEmail}
+                      onChange={(e) => setManualEmail(e.target.value)}
+                      className="w-full p-2 border rounded-lg outline-none focus:ring-2 ring-green-500"
+                      placeholder="resident@email.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase">
+                      Type
+                    </label>
+                    <select
+                      value={manualType}
+                      onChange={(e) => setManualType(e.target.value)}
+                      className="w-full p-2 border rounded-lg bg-white"
+                    >
+                      <option value="Plastic">Plastic (20pts)</option>
+                      <option value="Glass">Glass (15pts)</option>
+                      <option value="Paper">Paper (10pts)</option>
+                      <option value="Metal">Metal (30pts)</option>
+                      <option value="E-waste">E-waste (50pts)</option>
+                      <option value="Organic">Organic (25pts)</option>
+                    </select>
+                  </div>
+                  <button
+                    disabled={manualLoading}
+                    className="w-full py-3 bg-gray-800 text-white font-bold rounded-lg hover:bg-black"
+                  >
+                    {manualLoading ? "Processing..." : "Confirm Drop-off"}
+                  </button>
+                </form>
+              </div>
+              {lastSuccess && (
+                <div className="bg-green-50 border border-green-200 p-4 rounded-xl">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Trophy size={16} className="text-yellow-500" />
+                    <span className="font-bold text-green-900">Success!</span>
+                  </div>
+                  <p className="text-sm text-green-700">
+                    {lastSuccess.message}
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

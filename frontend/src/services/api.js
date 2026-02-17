@@ -70,12 +70,15 @@ const apiRequest = async (endpoint, options = {}) => {
   if (response.status === 401 && !options._retry && !path.includes("login")) {
     try {
       await refreshAccessToken();
-      config._retry = true;
-      config.headers = {
-        ...getAuthHeaders(contentType),
-        ...options.headers,
+      const retryConfig = {
+        ...config,
+        _retry: true,
+        headers: {
+          ...getAuthHeaders(contentType),
+          ...options.headers,
+        },
       };
-      response = await fetch(url, config);
+      response = await fetch(url, retryConfig);
     } catch (refreshError) {
       throw refreshError;
     }
@@ -153,6 +156,15 @@ export const articleAPI = {
   update: (id, data) => api.patch(`/education/articles/${id}/`, data),
   delete: (id) => api.delete(`/education/articles/${id}/`),
   getCategories: () => api.get("/education/articles/categories/"),
+};
+
+// --- NEW VIDEO API (Matched to Education Path) ---
+export const videoAPI = {
+  getAll: () => api.get("/education/videos/"),
+  getById: (id) => api.get(`/education/videos/${id}/`),
+  create: (data) => api.post("/education/videos/", data),
+  update: (id, data) => api.put(`/education/videos/${id}/`, data),
+  delete: (id) => api.delete(`/education/videos/${id}/`),
 };
 
 export const centerAPI = {

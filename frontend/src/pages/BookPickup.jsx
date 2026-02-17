@@ -188,6 +188,7 @@ const BookPickup = () => {
                       <option value="Paper">Paper</option>
                       <option value="Metal">Metal</option>
                       <option value="E-waste">E-waste</option>
+                      <option value="Organic">Organic</option>
                     </select>
                   </div>
                 </div>

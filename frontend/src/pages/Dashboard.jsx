@@ -4,15 +4,14 @@ import {
   CheckCircle,
   Clock,
   CreditCard,
+  Crown,
   History,
   MapPin,
-  Trophy,
-  Crown,
   Medal,
   Scale,
-  AlertCircle,
+  Trophy,
+  Wallet,
   XCircle,
-  Wallet, // Added Wallet Icon
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
