@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-# UPDATED IMPORTS: Added WithdrawalRequest
+from decimal import Decimal  # <--- CRITICAL IMPORT ADDED
 from .models import PickupRequest, DriverProfile, Notification, Wallet, WalletTransaction, WithdrawalRequest
 
 User = get_user_model()
@@ -105,7 +105,7 @@ class PickupRequestSerializer(serializers.ModelSerializer):
     def get_center_name(self, obj):
         return obj.center.name if obj.center else None
 
-# --- NEW: WITHDRAWAL REQUEST SERIALIZER (This was missing) ---
+# --- NEW: WITHDRAWAL REQUEST SERIALIZER (FIXED) ---
 class WithdrawalRequestSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     user_email = serializers.EmailField(source='user.email', read_only=True)
@@ -116,8 +116,14 @@ class WithdrawalRequestSerializer(serializers.ModelSerializer):
         fields = ['id', 'user_name', 'user_email', 'amount', 'mpesa_number', 'status', 'created_at', 'points_used']
 
     def get_points_used(self, obj):
-        # Calculate points used based on amount (Amount / 0.3)
-        return int(obj.amount / 0.3)
+        # FIX: Handle Decimal vs Float error and NoneTypes
+        try:
+            if not obj.amount:
+                return 0
+            # Convert 0.3 to Decimal to match database type
+            return int(obj.amount / Decimal("0.3"))
+        except:
+            return 0
 
 # --- 6. AUTH SERIALIZER ---
 class CustomTokenObtainPairSerializer(serializers.Serializer):

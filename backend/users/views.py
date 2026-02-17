@@ -1,8 +1,10 @@
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.authentication import JWTAuthentication 
+from django.views.decorators.csrf import csrf_exempt  # <--- CRITICAL IMPORT ADDED
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -14,7 +16,7 @@ from .serializers import (
     CustomTokenObtainPairSerializer, 
     PickupRequestSerializer, 
     NotificationSerializer,
-    WithdrawalRequestSerializer # NEW: Make sure to create this serializer if not exists
+    WithdrawalRequestSerializer
 )
 from .models import (
     RecyclingCenter, 
@@ -60,7 +62,6 @@ def register_user(request):
     serializer = UserSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
-        # Randomize location slightly for demo purposes
         user.latitude = -1.2921 + random.uniform(-0.05, 0.05)
         user.longitude = 36.8219 + random.uniform(-0.05, 0.05)
         user.save()
@@ -92,7 +93,6 @@ def get_user_profile(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_leaderboard(request):
-    # Leaderboard is based on LIFETIME points (Status)
     leaders = User.objects.filter(role='resident', is_staff=False).order_by('-lifetime_points')[:20]
     return Response(UserSerializer(leaders, many=True).data)
 
@@ -148,21 +148,17 @@ def bill_collection_job(request, request_id):
     if actual_weight <= 0:
         return Response({"error": "Weight must be greater than 0"}, status=400)
 
-    # Calculate Bill
     price_per_unit = WASTE_PRICES.get(job.waste_type, 50)
     bill_total = actual_weight * price_per_unit
     
-    # Ensure bill isn't 0
     if bill_total <= 0:
         bill_total = 50.0 
 
-    # Update Job
     job.actual_quantity = actual_weight
     job.billed_amount = bill_total
     job.status = 'collected' 
     job.save()
 
-    # Notify User
     Notification.objects.create(
         user=job.user,
         message=f"Pickup Complete! Weight: {actual_weight}kg. Total Bill: KES {bill_total}. Please go to your dashboard to pay.",
@@ -241,39 +237,32 @@ def assign_collector(request, request_id):
     
     return Response({"message": f"Assigned to {collector.get_full_name()}"})
 
-# --- ADMIN VERIFY (POINTS & REWARDS LOGIC) ---
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
 @transaction.atomic
 def admin_verify_and_pay(request, request_id):
     pickup = get_object_or_404(PickupRequest, id=request_id)
     
-    # Requirement: User must have paid the bill before verification
     if not pickup.is_paid:
         return Response({"error": "User has not paid the bill yet."}, status=400)
 
     if pickup.status == 'verified':
         return Response({"error": "Job already verified."}, status=400)
 
-    # 1. Driver Payout Logic
     user_paid_amount = Decimal(str(pickup.billed_amount))
     DRIVER_BASE_FEE = Decimal("100.00")
     COMMISSION_RATE = Decimal("0.20")
     driver_payout = DRIVER_BASE_FEE + (user_paid_amount * COMMISSION_RATE)
 
-    # 2. User Reward Logic (UPDATED)
     earned_points = POINTS_CONFIG.get(pickup.waste_type, 10)
     
-    # Update BOTH points
     pickup.user.redeemable_points = F('redeemable_points') + earned_points
     pickup.user.lifetime_points = F('lifetime_points') + earned_points
     pickup.user.save() 
     
-    # Refresh to check badge status based on lifetime_points
     pickup.user.refresh_from_db()
     pickup.user.update_badge() 
 
-    # 3. Pay Driver
     if pickup.collector:
         driver_profile, _ = DriverProfile.objects.get_or_create(
             user=pickup.collector,
@@ -289,7 +278,6 @@ def admin_verify_and_pay(request, request_id):
             pickup=pickup
         )
 
-    # 4. Finalize
     pickup.status = 'verified'
     pickup.save()
 
@@ -338,7 +326,6 @@ def toggle_user_status(request, user_id):
     user.save()
     return Response({"message": "Status updated"})
 
-# --- UPDATED: GET ALL COLLECTORS (With Real-Time Stats) ---
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def get_all_collectors(request):
@@ -346,26 +333,18 @@ def get_all_collectors(request):
     response_data = []
     
     for driver in collectors:
-        # Get base user data
         driver_data = UserSerializer(driver).data
-        
-        # Calculate real-time stats
-        # We count any job that has passed the 'assigned' stage (collected, paid, or verified)
         job_count = PickupRequest.objects.filter(
             collector=driver,
             status__in=['collected', 'verified', 'paid']
         ).count()
-        
-        # Calculate total weight (sum actual_quantity)
         total_weight = PickupRequest.objects.filter(
             collector=driver,
             status__in=['collected', 'verified', 'paid']
         ).aggregate(Sum('actual_quantity'))['actual_quantity__sum'] or 0
         
-        # Inject into response
         driver_data['completed_jobs_count'] = job_count
         driver_data['total_weight_kg'] = total_weight
-        
         response_data.append(driver_data)
         
     return Response(response_data)
@@ -416,12 +395,9 @@ def get_collector_history(request):
     history = PickupRequest.objects.filter(collector=request.user, status__in=['paid', 'verified']).order_by('-scheduled_date')
     return Response(PickupRequestSerializer(history, many=True).data)
 
-# --- 6. PAYMENTS, REWARDS & WITHDRAWALS ---
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def initiate_payment(request):
-    # This handles the USER PAYING THE BILL (Bill -> System)
     pickup = get_object_or_404(PickupRequest, id=request.data.get('pickup_id'), user=request.user)
     
     if pickup.billed_amount <= 0:
@@ -431,7 +407,6 @@ def initiate_payment(request):
         return Response({"error": "This bill is already paid."}, status=400)
 
     amount_to_pay = float(pickup.billed_amount)
-    # Mocking M-Pesa Transaction
     trans_code = f"MPESA-{uuid.uuid4().hex[:8].upper()}"
     
     pickup.is_paid = True
@@ -443,23 +418,19 @@ def initiate_payment(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def redeem_points(request):
-    # NEW: Converts Points -> Cash in Wallet
     user = request.user
     
     if user.redeemable_points < 1000:
         return Response({"error": f"Insufficient points. You need 1000, you have {user.redeemable_points}"}, status=400)
     
-    # 1. Deduct Points
     user.redeemable_points = F('redeemable_points') - 1000
     user.save()
     
-    # 2. Add Cash to Wallet
     reward_amount = Decimal("300.00")
     wallet, _ = Wallet.objects.get_or_create(user=user)
     wallet.balance = F('balance') + reward_amount
     wallet.save()
     
-    # 3. Log Transaction
     WalletTransaction.objects.create(
         wallet=wallet,
         transaction_type='redemption',
@@ -468,7 +439,6 @@ def redeem_points(request):
         description="Redeemed 1000 points for KES 300"
     )
     
-    # Refresh to get new values
     user.refresh_from_db()
     wallet.refresh_from_db()
     
@@ -478,32 +448,27 @@ def redeem_points(request):
         "wallet_balance": wallet.balance
     })
 
-# --- WITHDRAWALS (Updated Flow) ---
+# --- WITHDRAWALS (UPDATED SECTIONS FOR FIX) ---
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def initiate_withdrawal(request):
-    # User requests withdrawal -> Points deducted -> Saved as Pending
     user = request.user
     amount = float(request.data.get('amount', 0))
     phone = request.data.get('phone', user.phone)
 
-    # 1. Calculate required points (1 Point = 0.3 KES)
     required_points = int(amount / 0.3)
 
-    # 2. Validation
     if user.redeemable_points < required_points:
         return Response({'error': f'Insufficient points. You need {required_points} pts.'}, status=400)
     
     if amount < 50:
         return Response({'error': 'Minimum withdrawal is KES 50'}, status=400)
 
-    # 3. Deduct Points IMMEDIATELY (Prevent double spend)
     user.redeemable_points = F('redeemable_points') - required_points
     user.save()
 
-    # 4. Create Withdrawal Request
     WithdrawalRequest.objects.create(
         user=user,
         amount=amount,
@@ -515,16 +480,17 @@ def initiate_withdrawal(request):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def get_pending_withdrawals(request):
-    # Admin sees only pending
     withdrawals = WithdrawalRequest.objects.filter(status='pending').order_by('-created_at')
     serializer = WithdrawalRequestSerializer(withdrawals, many=True)
     return Response(serializer.data)
 
+# --- APPROVE WITHDRAWAL (FIXED) ---
+@csrf_exempt  # <--- FIX: Bypasses CSRF check for this specific view
 @api_view(['POST'])
+@authentication_classes([JWTAuthentication])
 @permission_classes([IsAdminUser])
 @transaction.atomic
 def approve_withdrawal(request, pk):
-    # Admin approves -> Money sent (Simulated)
     try:
         withdrawal = WithdrawalRequest.objects.get(pk=pk)
     except WithdrawalRequest.DoesNotExist:
@@ -535,16 +501,18 @@ def approve_withdrawal(request, pk):
 
     # --- TODO: INTEGRATE B2C M-PESA API HERE ---
     
-    withdrawal.status = 'paid'
+    withdrawal.status = 'approved' 
     withdrawal.save()
     
     return Response({'message': 'Approved & Paid'})
 
+# --- REJECT WITHDRAWAL (FIXED) ---
+@csrf_exempt  # <--- FIX: Bypasses CSRF check for this specific view
 @api_view(['POST'])
+@authentication_classes([JWTAuthentication])
 @permission_classes([IsAdminUser])
 @transaction.atomic
 def reject_withdrawal(request, pk):
-    # Admin rejects -> Points refunded
     try:
         withdrawal = WithdrawalRequest.objects.get(pk=pk)
     except WithdrawalRequest.DoesNotExist:
@@ -553,14 +521,14 @@ def reject_withdrawal(request, pk):
     if withdrawal.status != 'pending':
         return Response({'error': 'Request already processed'}, status=400)
     
-    # Refund Points
-    points_refund = int(withdrawal.amount / 0.3)
+    # Refund Points (Using Decimal for precision safety)
+    points_refund = int(withdrawal.amount / Decimal('0.3')) 
     user = withdrawal.user
     user.redeemable_points = F('redeemable_points') + points_refund
     user.save()
 
     withdrawal.status = 'rejected'
-    withdrawal.admin_note = request.data.get('reason', '')
+    withdrawal.rejection_reason = request.data.get('reason', '')
     withdrawal.save()
 
     return Response({'message': 'Rejected & Points Refunded'})
@@ -571,52 +539,42 @@ def get_driver_wallet(request):
     if request.user.role != 'service_provider':
         return Response({"error": "Unauthorized"}, status=403)
     
-    # 1. Get Completed Jobs (For History Table)
     completed_jobs = PickupRequest.objects.filter(
         collector=request.user,
         status__in=['verified', 'paid'] 
     ).order_by('-scheduled_date')
 
-    # 2. Get Pending Jobs (For Orange Pending Box)
     pending_jobs = PickupRequest.objects.filter(
         collector=request.user,
         status='collected',
         is_paid=False 
     )
 
-    # 3. Calculate Pending Amount Live
     pending_amount = 0.0
     for job in pending_jobs:
-        # Base fee (100) + 20% commission
         commission = float(job.billed_amount) * 0.20 if job.billed_amount else 0.0
         pending_amount += 100.0 + commission
 
-    # 4. Get Stored Total from Profile
     try:
         profile = request.user.driver_profile
         stored_total = float(profile.total_earned)
     except:
-        # Create profile if missing
         profile = DriverProfile.objects.create(user=request.user)
         stored_total = 0.0
 
-    # 5. Create Transaction List
     transactions = PickupRequestSerializer(completed_jobs, many=True).data
 
-    # --- THE SAFETY NET ---
-    # If Stored Total > History, add "Previous Earnings" row to fix empty table
     calculated_from_history = sum([100 + (float(j.billed_amount) * 0.2) for j in completed_jobs])
     
     if stored_total > calculated_from_history:
         diff = stored_total - calculated_from_history
-        # Avoid tiny floating point diffs
         if diff > 1.0: 
             transactions.insert(0, {
                 "id": "MIGRATE",
                 "waste_type": "Previous Earnings",
                 "region": "System Migration",
                 "scheduled_date": timezone.now(),
-                "billed_amount": (diff - 100) / 0.2, # Rough estimate for display
+                "billed_amount": (diff - 100) / 0.2, 
                 "status": "verified",
                 "user_full_name": "System"
             })
@@ -628,7 +586,6 @@ def get_driver_wallet(request):
         "transactions": transactions
     })
 
-# --- 7. NOTIFICATIONS ---
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_notifications(request):
