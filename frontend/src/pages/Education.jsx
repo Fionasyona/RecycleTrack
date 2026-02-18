@@ -12,7 +12,8 @@ import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import { Button } from "../components/common/Button";
 import ArticleCard from "../components/education/ArticleCard";
-import { api } from "../services/api"; // Ensure you import your axios instance
+// FIXED: Import the specific API helpers instead of just the raw api instance
+import { articleAPI, videoAPI } from "../services/api";
 
 const Education = () => {
   const [activeTab, setActiveTab] = useState("articles"); // 'articles' | 'videos'
@@ -36,16 +37,28 @@ const Education = () => {
 
   const loadCategories = async () => {
     try {
-      // Fetch dynamic categories from the backend
-      const res = await api.get("/articles/categories/");
-      if (res.data) {
-        setAvailableCategories(res.data);
+      // FIXED: Uses articleAPI helper which calls /api/education/categories/
+      const data = await articleAPI.getCategories();
+      if (data) {
+        // Ensure we handle both string arrays and object arrays
+        const categoryNames = data.map((cat) =>
+          typeof cat === "string" ? cat : cat.name,
+        );
+        // We use a Set to ensure "All" is first and there are no duplicates
+        const uniqueCategories = Array.from(new Set(["All", ...categoryNames]));
+        setAvailableCategories(uniqueCategories);
       }
     } catch (error) {
       console.error("Failed to load categories", error);
-      // Fallback categories if API fails
+      // Fallback categories including the new waste types
       setAvailableCategories([
         "All",
+        "Plastic",
+        "Metal",
+        "Organic",
+        "E-waste",
+        "Glass",
+        "Paper",
         "Recycling",
         "Sustainability",
         "Innovation",
@@ -62,11 +75,13 @@ const Education = () => {
       }
 
       if (activeTab === "articles") {
-        const res = await api.get("/articles/", { params });
-        setArticles(res.data);
+        // FIXED: Uses articleAPI.getAll() to ensure /api/education/articles/ path
+        const data = await articleAPI.getAll(params);
+        setArticles(data);
       } else {
-        const res = await api.get("/videos/", { params });
-        setVideos(res.data);
+        // FIXED: Uses videoAPI.getAll() to ensure /api/education/videos/ path
+        const data = await videoAPI.getAll(params);
+        setVideos(data);
       }
     } catch (error) {
       console.error(error);
@@ -215,7 +230,7 @@ const Education = () => {
                       {/* Thumbnail Container */}
                       <div className="relative aspect-video bg-gray-200 overflow-hidden">
                         <img
-                          src={video.thumbnail} // Serializer now provides this URL
+                          src={video.thumbnail} // Serializer now provides this URL correctly
                           alt={video.title}
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                         />

@@ -4,6 +4,7 @@ import {
   Calendar,
   CalendarClock,
   CheckCircle,
+  CheckCheck,
   Clock,
   DollarSign,
   Eye,
@@ -32,10 +33,18 @@ import { api, centerAPI } from "../services/api";
 const AdminDashboard = () => {
   // --- STATE ---
   const [activeTab, setActiveTab] = useState("queue");
+
+  // Withdrawal Sub-tab State
+  const [withdrawalTab, setWithdrawalTab] = useState("pending"); // 'pending' | 'approved'
+
   const [requests, setRequests] = useState([]);
   const [history, setHistory] = useState([]);
   const [collectors, setCollectors] = useState([]);
+
+  // Withdrawal Data
   const [withdrawals, setWithdrawals] = useState([]); // Pending withdrawals
+  const [approvedWithdrawals, setApprovedWithdrawals] = useState([]); // Approved withdrawals
+
   const [allUsers, setAllUsers] = useState([]);
   const [allCenters, setAllCenters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,15 +70,23 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [reqRes, colRes, histRes, withRes, usersRes, centersRes] =
-        await Promise.all([
-          api.get("/users/pickup/pending/"),
-          api.get("/users/admin/collectors/"),
-          api.get("/users/admin/history/"),
-          api.get("/users/custom-admin/withdrawals/pending/"),
-          api.get("/users/users/"),
-          centerAPI.getAll(),
-        ]);
+      const [
+        reqRes,
+        colRes,
+        histRes,
+        withRes,
+        approvedWithRes,
+        usersRes,
+        centersRes,
+      ] = await Promise.all([
+        api.get("/users/pickup/pending/"),
+        api.get("/users/admin/collectors/"),
+        api.get("/users/admin/history/"),
+        api.get("/users/custom-admin/withdrawals/pending/"),
+        api.get("/users/custom-admin/withdrawals/approved/"), // Fetch approved history
+        api.get("/users/users/"),
+        centerAPI.getAll(),
+      ]);
 
       const extractData = (res) => {
         if (Array.isArray(res)) return res;
@@ -82,6 +99,7 @@ const AdminDashboard = () => {
       setCollectors(extractData(colRes));
       setHistory(extractData(histRes));
       setWithdrawals(extractData(withRes));
+      setApprovedWithdrawals(extractData(approvedWithRes));
       setAllUsers(extractData(usersRes));
       setAllCenters(extractData(centersRes));
     } catch (error) {
@@ -174,9 +192,20 @@ const AdminDashboard = () => {
     if (!window.confirm(`Approve withdrawal of KES ${amount}?`)) return;
     const toastId = toast.loading("Processing payout...");
     try {
-      await api.post(`/users/custom-admin/withdrawals/${id}/approve/`);
+      const res = await api.post(
+        `/users/custom-admin/withdrawals/${id}/approve/`,
+      );
       toast.success("Withdrawal Approved & Paid!", { id: toastId });
-      setWithdrawals((prev) => prev.filter((req) => req.id !== id));
+
+      // Optimistically move from Pending to Approved locally
+      const approvedItem = withdrawals.find((w) => w.id === id);
+      if (approvedItem) {
+        setWithdrawals((prev) => prev.filter((req) => req.id !== id));
+        setApprovedWithdrawals((prev) => [
+          { ...approvedItem, status: "approved", ...res.data },
+          ...prev,
+        ]);
+      }
     } catch (error) {
       toast.error(error.response?.data?.error || "Approval failed.", {
         id: toastId,
@@ -287,7 +316,7 @@ const AdminDashboard = () => {
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6 md:space-y-8 relative">
-      {/* ... (Modals remain unchanged) ... */}
+      {/* --- VIEW DETAILS MODAL --- */}
       {showDetailsModal && selectedDetail && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
@@ -337,7 +366,10 @@ const AdminDashboard = () => {
                       {(selectedDetailUser?.phone ||
                         selectedDetail.user_phone) && (
                         <a
-                          href={`tel:${selectedDetailUser?.phone || selectedDetail.user_phone}`}
+                          href={`tel:${
+                            selectedDetailUser?.phone ||
+                            selectedDetail.user_phone
+                          }`}
                           className="bg-green-500 text-white p-1.5 rounded-full hover:bg-green-600 shadow-sm"
                           title="Call Now"
                         >
@@ -447,6 +479,7 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      {/* --- ASSIGNMENT MODAL --- */}
       {showAssignModal && selectedRequest && (
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
@@ -539,7 +572,7 @@ const AdminDashboard = () => {
           </div>
           <div className="bg-green-900/50 px-4 py-3 rounded-xl border border-green-700 text-center">
             <p className="text-[10px] md:text-xs text-green-200 uppercase tracking-wider font-bold">
-              Payout Requests
+              Pending Payouts
             </p>
             <p className="text-xl md:text-2xl font-bold">
               {withdrawals.length}
@@ -752,15 +785,134 @@ const AdminDashboard = () => {
               )}
 
               {activeTab === "withdrawals" && (
-                <div className="space-y-4">
-                  {withdrawals.length === 0 ? (
+                <div className="space-y-4 animate-fade-in">
+                  {/* --- WITHDRAWAL SUB-TABS --- */}
+                  <div className="flex gap-1 p-1 bg-gray-100/80 rounded-xl w-fit mb-2">
+                    <button
+                      onClick={() => setWithdrawalTab("pending")}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                        withdrawalTab === "pending"
+                          ? "bg-white text-gray-800 shadow-sm ring-1 ring-black/5"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Pending ({withdrawals.length})
+                    </button>
+                    <button
+                      onClick={() => setWithdrawalTab("approved")}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                        withdrawalTab === "approved"
+                          ? "bg-white text-green-700 shadow-sm ring-1 ring-black/5"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Approved ({approvedWithdrawals.length})
+                    </button>
+                  </div>
+
+                  {withdrawalTab === "pending" ? (
+                    // --- PENDING LIST ---
+                    withdrawals.length === 0 ? (
+                      <div className="text-center p-12 bg-white rounded-xl border border-gray-100">
+                        <CheckCircle className="w-10 h-10 text-green-200 mx-auto mb-3" />
+                        <h3 className="text-lg font-medium text-gray-900">
+                          No Pending Requests
+                        </h3>
+                        <p className="text-gray-500">
+                          All withdrawal requests have been processed.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 uppercase tracking-wider text-xs">
+                            <tr>
+                              <th className="p-4 font-semibold">User</th>
+                              <th className="p-4 font-semibold">Amount</th>
+                              <th className="p-4 font-semibold hidden md:table-cell">
+                                Phone
+                              </th>
+                              <th className="p-4 font-semibold text-right">
+                                Actions
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {withdrawals.map((req) => (
+                              <tr
+                                key={req.id}
+                                className="hover:bg-gray-50 transition"
+                              >
+                                <td className="p-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+                                      <User size={14} />
+                                    </div>
+                                    <div>
+                                      <p className="font-bold text-gray-900">
+                                        {req.user_name || "Resident"}
+                                      </p>
+                                      <p className="text-xs text-gray-500">
+                                        {req.user_email}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="p-4">
+                                  <p className="font-bold text-gray-900">
+                                    KES {req.amount}
+                                  </p>
+                                  <p className="text-xs text-orange-500 font-medium">
+                                    -{req.points_used} pts
+                                  </p>
+                                </td>
+                                <td className="p-4 hidden md:table-cell">
+                                  <div className="flex items-center gap-2 text-gray-700">
+                                    <Smartphone
+                                      size={14}
+                                      className="text-gray-400"
+                                    />
+                                    <span className="font-mono">
+                                      {req.mpesa_number}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="p-4 text-right space-x-2">
+                                  <button
+                                    onClick={() =>
+                                      handleRejectWithdrawal(req.id)
+                                    }
+                                    className="px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-bold transition"
+                                  >
+                                    Reject
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleApproveWithdrawal(
+                                        req.id,
+                                        req.amount,
+                                      )
+                                    }
+                                    className="px-3 py-1.5 text-white bg-green-600 hover:bg-green-700 rounded-lg text-xs font-bold shadow-sm transition inline-flex items-center gap-1"
+                                  >
+                                    <CheckCircle size={14} /> Pay
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  ) : // --- APPROVED LIST ---
+                  approvedWithdrawals.length === 0 ? (
                     <div className="text-center p-12 bg-white rounded-xl border border-gray-100">
-                      <CheckCircle className="w-10 h-10 text-green-200 mx-auto mb-3" />
+                      <Clock className="w-10 h-10 text-gray-200 mx-auto mb-3" />
                       <h3 className="text-lg font-medium text-gray-900">
-                        All caught up!
+                        No Approved History
                       </h3>
                       <p className="text-gray-500">
-                        No pending withdrawal requests.
+                        No past withdrawals found.
                       </p>
                     </div>
                   ) : (
@@ -769,24 +921,24 @@ const AdminDashboard = () => {
                         <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 uppercase tracking-wider text-xs">
                           <tr>
                             <th className="p-4 font-semibold">User</th>
-                            <th className="p-4 font-semibold">Amount</th>
+                            <th className="p-4 font-semibold">Amount Paid</th>
                             <th className="p-4 font-semibold hidden md:table-cell">
                               Phone
                             </th>
                             <th className="p-4 font-semibold text-right">
-                              Actions
+                              Status
                             </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {withdrawals.map((req) => (
+                          {approvedWithdrawals.map((req) => (
                             <tr
                               key={req.id}
                               className="hover:bg-gray-50 transition"
                             >
                               <td className="p-4">
                                 <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+                                  <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center font-bold text-xs">
                                     <User size={14} />
                                   </div>
                                   <div>
@@ -796,10 +948,6 @@ const AdminDashboard = () => {
                                     <p className="text-xs text-gray-500">
                                       {req.user_email}
                                     </p>
-                                    <div className="md:hidden flex items-center gap-1 text-xs text-gray-500 mt-1">
-                                      <Smartphone size={10} />{" "}
-                                      {req.mpesa_number}
-                                    </div>
                                   </div>
                                 </div>
                               </td>
@@ -807,8 +955,8 @@ const AdminDashboard = () => {
                                 <p className="font-bold text-gray-900">
                                   KES {req.amount}
                                 </p>
-                                <p className="text-xs text-orange-500 font-medium">
-                                  -{req.points_used} pts
+                                <p className="text-xs text-green-600 font-medium">
+                                  Paid Out
                                 </p>
                               </td>
                               <td className="p-4 hidden md:table-cell">
@@ -822,21 +970,10 @@ const AdminDashboard = () => {
                                   </span>
                                 </div>
                               </td>
-                              <td className="p-4 text-right space-x-2">
-                                <button
-                                  onClick={() => handleRejectWithdrawal(req.id)}
-                                  className="px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-bold transition"
-                                >
-                                  Reject
-                                </button>
-                                <button
-                                  onClick={() =>
-                                    handleApproveWithdrawal(req.id, req.amount)
-                                  }
-                                  className="px-3 py-1.5 text-white bg-green-600 hover:bg-green-700 rounded-lg text-xs font-bold shadow-sm transition inline-flex items-center gap-1"
-                                >
-                                  <CheckCircle size={14} /> Pay
-                                </button>
+                              <td className="p-4 text-right">
+                                <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold border border-green-200">
+                                  <CheckCheck size={12} /> Approved
+                                </span>
                               </td>
                             </tr>
                           ))}
@@ -895,7 +1032,7 @@ const AdminDashboard = () => {
                 </div>
               )}
 
-              {/* ANALYTICS TAB (UPDATED) */}
+              {/* ANALYTICS TAB */}
               {activeTab === "analytics" && (
                 <div className="space-y-8 animate-fade-in">
                   {/* Financials Overview */}
@@ -964,7 +1101,7 @@ const AdminDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Waste Composition Section (Full Width Now) */}
+                  {/* Waste Composition Section */}
                   <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                     <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
                       <PieChart size={18} className="text-blue-500" /> Waste
@@ -1041,7 +1178,11 @@ const AdminDashboard = () => {
                       className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition"
                     >
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${i === 0 ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-600"}`}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
+                          i === 0
+                            ? "bg-yellow-100 text-yellow-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
                       >
                         {i + 1}
                       </div>

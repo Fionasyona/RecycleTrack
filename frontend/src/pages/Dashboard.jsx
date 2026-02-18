@@ -1,4 +1,6 @@
 import {
+  ArrowUpRight,
+  Banknote,
   Calendar,
   CalendarClock,
   CheckCircle,
@@ -33,6 +35,7 @@ const Dashboard = () => {
   const [centerCount, setCenterCount] = useState(0);
   const [leaders, setLeaders] = useState([]);
   const [activity, setActivity] = useState({ pending: [], history: [] });
+  const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // --- HELPER: Process Data to Move Rejected items to History ---
@@ -56,14 +59,13 @@ const Dashboard = () => {
     const formattedRejected = rejectedItems.map((req) => ({
       id: `rej-${req.id}`,
       waste_type: req.waste_type,
-      // Use created_at or scheduled_date for the timestamp
       date: req.created_at || req.scheduled_date,
       points: 0,
-      status: "Rejected", // Tag to identify in UI
+      status: "Rejected",
       rejection_reason: req.rejection_reason,
     }));
 
-    // 4. Merge Real History + Rejected Items & Sort by Date (Newest First)
+    // 4. Merge Real History + Rejected Items & Sort by Date
     const combinedHistory = [...rawHistory, ...formattedRejected].sort(
       (a, b) => new Date(b.date) - new Date(a.date),
     );
@@ -150,21 +152,18 @@ const Dashboard = () => {
     return groups;
   };
 
-  // --- UPDATED: Handle Withdrawal Request ---
   const handleWithdraw = async () => {
     const points = profile.redeemable_points || 0;
-    const amount = (points * 0.3).toFixed(2); // Assuming 1 point = 0.3 KES
+    const amount = (points * 0.3).toFixed(2);
 
-    // Validation: Minimum points required (e.g., 100 points)
     if (points < 100) {
       toast.error("You need at least 100 points to withdraw.");
       return;
     }
 
-    // UPDATED: Confirmation message clarifies this is a REQUEST, not immediate
     if (
       !window.confirm(
-        `Submit a request to withdraw KES ${amount}? \n\nThis requires Admin approval before funds are sent to your M-Pesa.`,
+        `Submit a request to withdraw KES ${amount}? \n\nThis requires Admin approval.`,
       )
     )
       return;
@@ -172,18 +171,19 @@ const Dashboard = () => {
     const toastId = toast.loading("Submitting withdrawal request...");
 
     try {
-      // NOTE: Ensure your backend creates a 'Pending' withdrawal record here
       await api.post("/users/withdraw/initiate/", {
         amount: amount,
         phone: profile.phone || currentUser.phone,
       });
 
-      // UPDATED: Success message
       toast.success("Request sent! Pending Admin approval.", { id: toastId });
 
-      // Refresh profile to update points balance (if backend deducts immediately)
-      const profileRes = await api.get("/users/profile/");
+      const [profileRes, withdrawalsRes] = await Promise.all([
+        api.get("/users/profile/"),
+        api.get("/users/withdrawals/"),
+      ]);
       setProfile(profileRes.data || profileRes);
+      setWithdrawals(withdrawalsRes.data || withdrawalsRes || []);
     } catch (error) {
       console.error("Withdraw Error", error);
       toast.error(error.response?.data?.error || "Request failed. Try again.", {
@@ -216,7 +216,6 @@ const Dashboard = () => {
     try {
       const historyRes = await api.get("/users/history/");
       const historyData = historyRes.pending ? historyRes : historyRes.data;
-      // Process data to move rejected to history
       setActivity(processActivityData(historyData));
     } catch (error) {
       console.error("Error fetching history:", error);
@@ -226,13 +225,19 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [centersRes, profileRes, leaderboardRes, historyRes] =
-          await Promise.all([
-            centerAPI.getAll(),
-            api.get("/users/profile/"),
-            api.get("/users/leaderboard/"),
-            api.get("/users/history/"),
-          ]);
+        const [
+          centersRes,
+          profileRes,
+          leaderboardRes,
+          historyRes,
+          withdrawalsRes,
+        ] = await Promise.all([
+          centerAPI.getAll(),
+          api.get("/users/profile/"),
+          api.get("/users/leaderboard/"),
+          api.get("/users/history/"),
+          api.get("/users/withdrawals/").catch(() => ({ data: [] })),
+        ]);
 
         const centers = Array.isArray(centersRes)
           ? centersRes
@@ -244,9 +249,9 @@ const Dashboard = () => {
             ? leaderboardRes.data
             : leaderboardRes,
         );
+        setWithdrawals(withdrawalsRes.data || withdrawalsRes || []);
 
         const historyData = historyRes.pending ? historyRes : historyRes.data;
-        // Process data using our new helper
         setActivity(processActivityData(historyData));
       } catch (error) {
         console.error("Dashboard Error:", error);
@@ -260,12 +265,12 @@ const Dashboard = () => {
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50 text-gray-500">
-        Loading...
+        <Clock className="w-6 h-6 animate-spin mr-2" /> Loading...
       </div>
     );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mr-auto">
+    <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mr-auto pb-10">
       {/* 1. HERO SECTION */}
       <div className="bg-gradient-to-r from-green-700 to-green-600 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
         <div className="relative flex flex-col md:flex-row justify-between items-center gap-6">
@@ -303,7 +308,7 @@ const Dashboard = () => {
 
       {/* 2. STATS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* --- UPDATED WALLET CARD --- */}
+        {/* WALLET CARD */}
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4 w-full sm:w-auto">
             <div className="bg-yellow-100 p-3 rounded-full text-yellow-600">
@@ -323,10 +328,9 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* WITHDRAW BUTTON */}
           <button
             onClick={handleWithdraw}
-            disabled={(profile.redeemable_points || 0) < 100} // Disable if less than 100 points
+            disabled={(profile.redeemable_points || 0) < 100}
             className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow-md hover:bg-green-700 hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:shadow-none"
             title={
               (profile.redeemable_points || 0) < 100
@@ -358,60 +362,134 @@ const Dashboard = () => {
 
       {/* 3. MAIN DASHBOARD CONTENT */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* --- LEFT COLUMN: LEADERBOARD --- */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-fit">
-          <div className="p-6 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-yellow-500" /> Top Recyclers
-            </h2>
-          </div>
-          <div className="divide-y divide-gray-100">
-            {Array.isArray(leaders) && leaders.length > 0 ? (
-              leaders.slice(0, 5).map((player, index) => (
-                <div
-                  key={player.id || index}
-                  className={`flex items-center justify-between p-4 ${currentUser?.email === player.email ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-8 flex justify-center">
-                      {getRankIcon(index)}
+        {/* --- LEFT COLUMN: LEADERBOARD & WITHDRAWALS --- */}
+        <div className="space-y-8">
+          {/* LEADERBOARD (UPDATED WITH SCROLL) */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-fit">
+            <div className="p-6 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-yellow-500" /> Top Recyclers
+              </h2>
+            </div>
+            {/* Added max-h-96 and overflow-y-auto to allow scrolling */}
+            <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto custom-scrollbar">
+              {Array.isArray(leaders) && leaders.length > 0 ? (
+                // Removed .slice(0,5) to show all
+                leaders.map((player, index) => (
+                  <div
+                    key={player.id || index}
+                    className={`flex items-center justify-between p-4 ${currentUser?.email === player.email ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-8 flex justify-center">
+                        {getRankIcon(index)}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-gray-400" : "bg-green-600"}`}
+                        >
+                          {getDisplayName(player)[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p
+                            className={`text-sm font-bold ${currentUser?.email === player.email ? "text-green-800" : "text-gray-800"}`}
+                          >
+                            {getDisplayName(player)}{" "}
+                            {currentUser?.email === player.email && "(You)"}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {player.badge}
+                          </p>
+                        </div>
+                      </div>
                     </div>
+                    <div className="font-bold text-gray-700">
+                      {player.lifetime_points || 0}{" "}
+                      <span className="text-xs font-normal text-gray-400">
+                        pts
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 text-center text-gray-500 italic">
+                  Leaderboard loading...
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* RECENT WITHDRAWALS */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
+              <Banknote className="w-5 h-5 text-green-600" /> Recent Withdrawals
+            </h2>
+            {withdrawals.length > 0 ? (
+              <div className="space-y-3">
+                {withdrawals.slice(0, 3).map((w) => (
+                  <div
+                    key={w.id}
+                    className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
+                  >
                     <div className="flex items-center gap-3">
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-gray-400" : "bg-green-600"}`}
+                        className={`p-2 rounded-full ${
+                          w.status === "approved"
+                            ? "bg-green-100 text-green-600"
+                            : w.status === "rejected"
+                              ? "bg-red-100 text-red-600"
+                              : "bg-yellow-100 text-yellow-600"
+                        }`}
                       >
-                        {getDisplayName(player)[0].toUpperCase()}
+                        <ArrowUpRight size={16} />
                       </div>
                       <div>
-                        <p
-                          className={`text-sm font-bold ${currentUser?.email === player.email ? "text-green-800" : "text-gray-800"}`}
-                        >
-                          {getDisplayName(player)}{" "}
-                          {currentUser?.email === player.email && "(You)"}
+                        <p className="text-sm font-bold text-gray-800">
+                          KES {w.amount}
                         </p>
-                        <p className="text-xs text-gray-400">{player.badge}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(w.created_at).toLocaleDateString()}
+                        </p>
                       </div>
                     </div>
+                    <div>
+                      {w.status === "approved" && (
+                        <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded flex items-center gap-1">
+                          <CheckCircle size={10} /> Paid
+                        </span>
+                      )}
+                      {w.status === "pending" && (
+                        <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded flex items-center gap-1">
+                          <Clock size={10} /> Pending
+                        </span>
+                      )}
+                      {w.status === "rejected" && (
+                        <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded flex items-center gap-1">
+                          <XCircle size={10} /> Rejected
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="font-bold text-gray-700">
-                    {player.lifetime_points || 0}{" "}
-                    <span className="text-xs font-normal text-gray-400">
-                      pts
-                    </span>
+                ))}
+                {withdrawals.length > 3 && (
+                  <div className="text-center pt-2">
+                    <button className="text-xs text-green-600 font-bold hover:underline">
+                      View All Transactions
+                    </button>
                   </div>
-                </div>
-              ))
-            ) : (
-              <div className="p-8 text-center text-gray-500 italic">
-                Leaderboard loading...
+                )}
               </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">
+                No withdrawal history.
+              </p>
             )}
           </div>
         </div>
 
         {/* --- RIGHT COLUMN: REQUESTS & HISTORY --- */}
         <div className="space-y-8">
-          {/* Pickup Requests (NOW EXCLUDES REJECTED) */}
+          {/* 1. PICKUP REQUESTS */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
             <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
               <Clock className="w-5 h-5 text-orange-500" /> Pickup Requests
@@ -425,7 +503,7 @@ const Dashboard = () => {
                     <div className="flex items-center gap-2 mb-2">
                       <CalendarClock size={14} className="text-orange-400" />
                       <span className="text-xs font-bold text-gray-500 uppercase">
-                        Booked on: {dateLabel}
+                        Booked: {dateLabel}
                       </span>
                     </div>
                     <div className="space-y-3">
@@ -509,18 +587,15 @@ const Dashboard = () => {
             )}
           </div>
 
-          {/* Recent History (NOW INCLUDES REJECTED + SCROLLABLE) */}
+          {/* 3. RECYCLING HISTORY */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
             <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
-              <History className="w-5 h-5 text-blue-500" /> History
+              <History className="w-5 h-5 text-blue-500" /> Recycling History
             </h2>
-            {/* Added Scrollable Container */}
-            <div className="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
               {activity.history && activity.history.length > 0 ? (
                 activity.history.map((log) => {
-                  // Check if this item is a Rejected Request
                   const isRejected = log.status === "Rejected";
-
                   return (
                     <div
                       key={log.id}
@@ -544,7 +619,6 @@ const Dashboard = () => {
                           <p className="text-xs text-gray-500">
                             {new Date(log.date).toLocaleDateString()}
                           </p>
-                          {/* Show Rejection Reason if available */}
                           {isRejected && log.rejection_reason && (
                             <p className="text-xs text-red-500 mt-1 italic">
                               "{log.rejection_reason}"
