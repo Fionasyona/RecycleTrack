@@ -2,6 +2,12 @@ import math
 from rest_framework import serializers
 from .models import Article, Category, Video
 
+# --- NEW CATEGORY SERIALIZER ---
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'color']
+
 class ArticleSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     category = serializers.CharField(write_only=True, required=False)
@@ -11,7 +17,7 @@ class ArticleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'category', 'category_name', 
             'author', 'reading_time', 'published_date', 
-            'excerpt', 'content', 'views' # Add 'featured_image' if you have it
+            'excerpt', 'content', 'views', 'featured_image'
         ]
         read_only_fields = ['id', 'published_date', 'author', 'views', 'reading_time', 'excerpt']
 
@@ -31,24 +37,38 @@ class ArticleSerializer(serializers.ModelSerializer):
         category_name = validated_data.pop('category', None)
         content = validated_data.get('content', '')
 
+        # Auto-calculate fields
         validated_data['reading_time'] = self.calculate_reading_time(content)
         
         if 'excerpt' not in validated_data:
             validated_data['excerpt'] = self.generate_excerpt(content)
         
-        # Handle Category creation logic inside the view or here
+        # Handle Category logic
         if category_name:
             category_obj, _ = Category.objects.get_or_create(name=category_name)
             validated_data['category'] = category_obj
 
-        article = Article.objects.create(**validated_data)
-        return article
+        return Article.objects.create(**validated_data)
 
-# --- NEW VIDEO SERIALIZER ---
+    def update(self, instance, validated_data):
+        category_name = validated_data.pop('category', None)
+        content = validated_data.get('content', instance.content)
+
+        if 'content' in validated_data:
+            instance.reading_time = self.calculate_reading_time(content)
+            if 'excerpt' not in validated_data:
+                instance.excerpt = self.generate_excerpt(content)
+
+        if category_name:
+            category_obj, _ = Category.objects.get_or_create(name=category_name)
+            instance.category = category_obj
+
+        return super().update(instance, validated_data)
+
+
 class VideoSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     category = serializers.CharField(write_only=True, required=False)
-    # Expose the property method as a field
     thumbnail = serializers.ReadOnlyField() 
 
     class Meta:
@@ -56,8 +76,9 @@ class VideoSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'channel', 'youtube_id', 
             'duration', 'category', 'category_name', 
-            'thumbnail', 'published_date'
+            'thumbnail', 'published_date', 'views'
         ]
+        read_only_fields = ['id', 'published_date', 'views', 'thumbnail']
     
     def create(self, validated_data):
         category_name = validated_data.pop('category', None)
@@ -67,3 +88,12 @@ class VideoSerializer(serializers.ModelSerializer):
             validated_data['category'] = category_obj
             
         return Video.objects.create(**validated_data)
+
+    def update(self, instance, validated_data):
+        category_name = validated_data.pop('category', None)
+        
+        if category_name:
+            category_obj, _ = Category.objects.get_or_create(name=category_name)
+            instance.category = category_obj
+            
+        return super().update(instance, validated_data)

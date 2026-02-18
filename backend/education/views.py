@@ -2,7 +2,8 @@ from rest_framework import viewsets, filters, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Article, Category, Video
-from .serializers import ArticleSerializer, VideoSerializer
+# Ensure CategorySerializer is included in the import below
+from .serializers import ArticleSerializer, VideoSerializer, CategorySerializer
 
 # --- CUSTOM PERMISSION ---
 class IsAdminOrReadOnly(permissions.BasePermission):
@@ -13,6 +14,12 @@ class IsAdminOrReadOnly(permissions.BasePermission):
         return (request.user and 
                 request.user.is_authenticated and 
                 getattr(request.user, 'role', '') == 'admin')
+
+# --- NEW CATEGORY VIEWSET (Fixes the ImportError) ---
+class CategoryViewSet(viewsets.ModelViewSet):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    permission_classes = [permissions.AllowAny] # Usually public so users can filter
 
 class ArticleViewSet(viewsets.ModelViewSet):
     queryset = Article.objects.all()
@@ -50,7 +57,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
         all_cats = set(filter(None, article_cats + video_cats))
         return Response(["All"] + list(all_cats))
 
-# --- NEW VIDEO VIEWSET ---
+# --- VIDEO VIEWSET ---
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all()
     serializer_class = VideoSerializer

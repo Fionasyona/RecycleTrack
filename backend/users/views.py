@@ -4,7 +4,7 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.authentication import JWTAuthentication 
-from django.views.decorators.csrf import csrf_exempt  # <--- CRITICAL IMPORT ADDED
+from django.views.decorators.csrf import csrf_exempt 
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -481,6 +481,14 @@ def initiate_withdrawal(request):
 @permission_classes([IsAdminUser])
 def get_pending_withdrawals(request):
     withdrawals = WithdrawalRequest.objects.filter(status='pending').order_by('-created_at')
+    serializer = WithdrawalRequestSerializer(withdrawals, many=True)
+    return Response(serializer.data)
+
+# --- NEW: GET APPROVED WITHDRAWALS (Added for React Dashboard) ---
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def get_approved_withdrawals(request):
+    withdrawals = WithdrawalRequest.objects.filter(status='approved').order_by('-created_at')
     serializer = WithdrawalRequestSerializer(withdrawals, many=True)
     return Response(serializer.data)
 

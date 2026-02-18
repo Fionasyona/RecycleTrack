@@ -33,6 +33,7 @@ from .views import (
     # NEW IMPORTS
     initiate_withdrawal,
     get_pending_withdrawals,
+    get_approved_withdrawals, # <--- Added this
     approve_withdrawal,
     reject_withdrawal
 )
@@ -72,6 +73,7 @@ urlpatterns = [
     
     # --- NEW: ADMIN WITHDRAWAL MANAGEMENT ---
     path('custom-admin/withdrawals/pending/', get_pending_withdrawals, name='admin_withdrawals_pending'),
+    path('custom-admin/withdrawals/approved/', get_approved_withdrawals, name='admin_withdrawals_approved'), # <--- Added this
     path('custom-admin/withdrawals/<int:pk>/approve/', approve_withdrawal, name='admin_withdrawals_approve'),
     path('custom-admin/withdrawals/<int:pk>/reject/', reject_withdrawal, name='admin_withdrawals_reject'),
 
