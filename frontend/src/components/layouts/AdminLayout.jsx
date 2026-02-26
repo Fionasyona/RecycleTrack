@@ -11,6 +11,7 @@ import {
   Truck,
   Menu,
   X,
+  BarChart2, // <-- ADDED ICON HERE
 } from "lucide-react";
 
 const AdminLayout = () => {
@@ -26,6 +27,7 @@ const AdminLayout = () => {
 
   const navItems = [
     { path: "/admin", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
+    { path: "/admin/reports", label: "Reports", icon: <BarChart2 size={20} /> }, // <-- ADDED REPORTS TAB HERE
     { path: "/admin/users", label: "Manage Users", icon: <Users size={20} /> },
     {
       path: "/admin/collectors",

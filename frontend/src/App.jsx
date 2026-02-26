@@ -22,6 +22,7 @@ import BookPickup from "./pages/BookPickup";
 
 // --- Pages: Admin ---
 import AdminDashboard from "./pages/AdminDashboard";
+import Reports from "./pages/admin/Reports"; // <-- ADDED THIS IMPORT
 import UsersManagement from "./pages/UsersManagement";
 import ManageCenters from "./pages/admin/ManageCenters";
 import AdminArticles from "./pages/admin/AdminArticles";
@@ -35,19 +36,17 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-
           {/* =======================================================
               SECTION 1: PUBLIC ROUTES (No Auth Required)
               ======================================================= */}
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          
+
           {/* =======================================================
               SECTION 1: PUBLIC ROUTES (Wrapped in MainLayout)
               ======================================================= */}
           <Route element={<MainLayout />}>
-            
             <Route path="/education" element={<Education />} />
             <Route path="/education/:id" element={<ArticleDetail />} />
           </Route>
@@ -87,6 +86,8 @@ function App() {
           <Route path="/admin" element={<RoleGuard allowedRoles={["admin"]} />}>
             <Route element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />
+              <Route path="reports" element={<Reports />} />{" "}
+              {/* <-- MOVED HERE */}
               <Route path="users" element={<UsersManagement />} />
               <Route path="collectors" element={<CollectorsManagement />} />
               <Route path="centers" element={<ManageCenters />} />

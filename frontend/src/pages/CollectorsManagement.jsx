@@ -15,7 +15,7 @@ import {
   FileText,
   ShieldAlert,
   Eye,
-  PackageCheck, // Added Icon for Completed Jobs
+  PackageCheck,
 } from "lucide-react";
 
 const CollectorsManagement = () => {
@@ -60,7 +60,7 @@ const CollectorsManagement = () => {
     try {
       await api.patch(`/users/admin/verify-driver/${driverId}/`);
       toast.success("Driver Verified!");
-      // Update UI locally to reflect change
+      // Update UI locally to reflect change instantly
       setCollectors(
         collectors.map((c) =>
           c.id === driverId
@@ -121,7 +121,7 @@ const CollectorsManagement = () => {
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs uppercase text-gray-500 font-semibold tracking-wider">
                   <th className="p-4">Driver Details</th>
                   <th className="p-4">Contact & Location</th>
-                  <th className="p-4">Performance</th> {/* NEW HEADER */}
+                  <th className="p-4">Performance</th>
                   <th className="p-4">Verification</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
@@ -131,11 +131,8 @@ const CollectorsManagement = () => {
                   filteredCollectors.map((c) => {
                     // Check status
                     const isVerified = c.driver_profile?.is_verified;
-                    const hasTempID =
-                      c.driver_profile?.id_no?.startsWith("TEMP");
-                    // Assuming API returns completed_jobs_count or similar, usually calculated on backend
-                    // If not available, fallback to 0.
-                    // NOTE: You might need to update backend serializer to include `completed_jobs_count`
+                    const hasDocs =
+                      c.driver_profile?.id_no || c.driver_profile?.license_no;
                     const jobsDone =
                       c.completed_jobs_count ||
                       c.driver_profile?.total_jobs ||
@@ -175,7 +172,6 @@ const CollectorsManagement = () => {
                           </div>
                         </td>
 
-                        {/* NEW: Performance Column */}
                         <td className="p-4">
                           <div className="flex items-center gap-2">
                             <div className="bg-blue-50 text-blue-600 p-2 rounded-lg">
@@ -197,9 +193,9 @@ const CollectorsManagement = () => {
                             <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">
                               <CheckCircle size={12} /> Verified
                             </span>
-                          ) : hasTempID ? (
+                          ) : !hasDocs ? (
                             <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-bold">
-                              <Loader size={12} /> Not Registered
+                              <Loader size={12} /> No Docs Yet
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-bold animate-pulse">
@@ -210,6 +206,17 @@ const CollectorsManagement = () => {
 
                         <td className="p-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {/* NEW: Quick Verify Action in Table */}
+                            {!isVerified && (
+                              <button
+                                onClick={() => handleVerify(c.id)}
+                                className="text-green-600 bg-green-50 hover:bg-green-100 p-2 rounded-lg transition"
+                                title="Approve Driver"
+                              >
+                                <CheckCircle size={18} />
+                              </button>
+                            )}
+
                             {/* View Docs Button */}
                             <button
                               onClick={() => setSelectedDriver(c)}
@@ -222,6 +229,7 @@ const CollectorsManagement = () => {
                             <button
                               onClick={() => handleDelete(c.id)}
                               className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition"
+                              title="Remove Driver"
                             >
                               <Trash2 size={18} />
                             </button>
@@ -256,7 +264,7 @@ const CollectorsManagement = () => {
               </h3>
               <button
                 onClick={() => setSelectedDriver(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 transition"
               >
                 <X size={24} />
               </button>
@@ -283,7 +291,7 @@ const CollectorsManagement = () => {
                     National ID Number
                   </label>
                   <p className="font-mono text-gray-800 font-bold text-lg">
-                    {selectedDriver.driver_profile?.id_no}
+                    {selectedDriver.driver_profile?.id_no || "Not Submitted"}
                   </p>
                 </div>
                 <div className="border-t border-gray-200 pt-3">
@@ -291,7 +299,8 @@ const CollectorsManagement = () => {
                     Driving License
                   </label>
                   <p className="font-mono text-gray-800 font-bold text-lg">
-                    {selectedDriver.driver_profile?.license_no}
+                    {selectedDriver.driver_profile?.license_no ||
+                      "Not Submitted"}
                   </p>
                 </div>
               </div>
@@ -300,20 +309,20 @@ const CollectorsManagement = () => {
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setSelectedDriver(null)}
-                  className="flex-1 py-3 text-gray-600 font-bold hover:bg-gray-100 rounded-xl transition"
+                  className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold hover:bg-gray-50 rounded-xl transition"
                 >
                   Close
                 </button>
 
-                {!selectedDriver.driver_profile?.is_verified &&
-                  !selectedDriver.driver_profile?.id_no?.startsWith("TEMP") && (
-                    <button
-                      onClick={() => handleVerify(selectedDriver.id)}
-                      className="flex-1 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 transition"
-                    >
-                      Approve Driver
-                    </button>
-                  )}
+                {/* FIXED: Removed restrictive TEMP check, based entirely on verification status */}
+                {!selectedDriver.driver_profile?.is_verified && (
+                  <button
+                    onClick={() => handleVerify(selectedDriver.id)}
+                    className="flex-1 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 transition flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle size={18} /> Approve Driver
+                  </button>
+                )}
               </div>
             </div>
           </div>

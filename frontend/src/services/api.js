@@ -115,11 +115,17 @@ export const articleAPI = {
   getAll: (params) => api.get("/education/articles/", { params }),
   getById: (id) => api.get(`/education/articles/${id}/`),
   getCategories: () => api.get("/education/categories/"),
+  create: (data) => api.post("/education/articles/", data),
+  update: (id, data) => api.put(`/education/articles/${id}/`, data),
+  delete: (id) => api.delete(`/education/articles/${id}/`),
 };
 
 export const videoAPI = {
   getAll: (params) => api.get("/education/videos/", { params }),
   getById: (id) => api.get(`/education/videos/${id}/`),
+  create: (data) => api.post("/education/videos/", data),
+  update: (id, data) => api.put(`/education/videos/${id}/`, data),
+  delete: (id) => api.delete(`/education/videos/${id}/`),
 };
 
 // FIXED: Added missing centerAPI export for the Dashboard

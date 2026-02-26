@@ -1,15 +1,21 @@
 import {
   AlertCircle,
   Archive,
-  Calendar,
+  Building2,
   CalendarClock,
   CheckCircle,
+  Coins,
+  Edit,
+  Eye,
+  FileText,
   LayoutDashboard,
   Loader,
   LogOut,
+  Mail,
   MapPin,
   Menu,
   Navigation,
+  Phone,
   RefreshCw,
   Scale,
   ShieldCheck,
@@ -19,15 +25,8 @@ import {
   Wallet,
   X,
   XCircle,
-  Phone,
-  Mail,
-  Coins,
-  Building2,
-  Eye,
-  FileText,
-  Image as ImageIcon,
 } from "lucide-react";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
@@ -38,12 +37,17 @@ const CollectorDashboard = () => {
   const [activeTab, setActiveTab] = useState("active");
   const [jobs, setJobs] = useState([]);
   const [history, setHistory] = useState([]);
-  const [allUsers, setAllUsers] = useState([]); // <--- NEW: Store users to find phone numbers
+  const [allUsers, setAllUsers] = useState([]);
 
   // --- MODAL STATE ---
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
-  const [selectedDetailUser, setSelectedDetailUser] = useState(null); // <--- NEW: Specific user for modal
+  const [selectedDetailUser, setSelectedDetailUser] = useState(null);
+
+  // --- EDIT DOCS MODAL STATE ---
+  const [showDocsModal, setShowDocsModal] = useState(false);
+  const [docsForm, setDocsForm] = useState({ id_no: "", license_no: "" });
+  const [isSubmittingDocs, setIsSubmittingDocs] = useState(false);
 
   const [wallet, setWallet] = useState({
     total_earned: 0,
@@ -59,25 +63,21 @@ const CollectorDashboard = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch everything in parallel
       const [jobRes, histRes, walletRes, profileRes, usersRes] =
         await Promise.all([
           api.get("/users/collector/jobs/").catch((err) => []),
           api.get("/users/collector/history/").catch((err) => []),
           api.get("/users/driver/wallet/").catch((err) => ({})),
           api.get("/users/profile/").catch((err) => null),
-          api.get("/users/users/").catch((err) => []), // <--- NEW: Fetch Users
+          api.get("/users/users/").catch((err) => []),
         ]);
 
-      // 1. Jobs
       const jobData = jobRes.data ? jobRes.data : jobRes;
       setJobs(Array.isArray(jobData) ? jobData : []);
 
-      // 2. History
       const histData = histRes.data ? histRes.data : histRes;
       setHistory(Array.isArray(histData) ? histData : []);
 
-      // 3. Wallet
       const walletData = walletRes.data || walletRes;
       if (walletData) {
         setWallet({
@@ -89,10 +89,8 @@ const CollectorDashboard = () => {
         });
       }
 
-      // 4. Profile
       setDriverProfile(profileRes.data || profileRes);
 
-      // 5. Users (For contact lookup)
       const usersData = usersRes.data ? usersRes.data : usersRes;
       setAllUsers(Array.isArray(usersData) ? usersData : []);
     } catch (error) {
@@ -135,19 +133,60 @@ const CollectorDashboard = () => {
     }
   };
 
-  // --- DETAILS HANDLER (UPDATED) ---
   const openDetailsModal = (job) => {
     setSelectedDetail(job);
-
-    // --- LOOKUP THE USER TO GET PHONE NUMBER ---
-    // We try to find the user in our 'allUsers' list using the user_id from the job
     const fullUser = allUsers.find(
       (u) =>
         u.id === job.user_id || u.id === job.user || u.email === job.user_email,
     );
-
     setSelectedDetailUser(fullUser || null);
     setShowDetailsModal(true);
+  };
+
+  // --- HANDLE DOCS UPDATE ---
+  const openEditDocs = () => {
+    setDocsForm({
+      id_no: driverProfile?.driver_profile?.id_no || "",
+      license_no: driverProfile?.driver_profile?.license_no || "",
+    });
+    setShowDocsModal(true);
+  };
+
+  const handleUpdateDocs = async (e) => {
+    e.preventDefault();
+    setIsSubmittingDocs(true);
+    const toastId = toast.loading("Updating documents...");
+
+    try {
+      // Hitting the correct POST endpoint verified from urls.py
+      await api.post("/users/driver/register-docs/", {
+        id_no: docsForm.id_no,
+        license_no: docsForm.license_no,
+      });
+
+      toast.success("Documents submitted for verification!", { id: toastId });
+      setShowDocsModal(false);
+      fetchData(); // Refresh the profile to show the new docs
+    } catch (error) {
+      console.error("Error updating docs", error);
+      toast.error(
+        error.response?.data?.error || "Failed to update documents.",
+        { id: toastId },
+      );
+    }
+    setIsSubmittingDocs(false);
+  };
+
+  const getUserPhone = (job) => {
+    // First check if job has user_phone directly
+    if (job.user_phone) return job.user_phone;
+
+    // Then try to find from allUsers
+    const fullUser = allUsers.find(
+      (u) =>
+        u.id === job.user_id || u.id === job.user || u.email === job.user_email,
+    );
+    return fullUser?.phone || null;
   };
 
   const groupJobsByAssignmentDate = (items) => {
@@ -206,6 +245,77 @@ const CollectorDashboard = () => {
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden relative">
+      {/* --- EDIT DOCS MODAL --- */}
+      {showDocsModal && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col">
+            <div className="bg-gray-50 p-6 flex justify-between items-center border-b border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <ShieldCheck className="text-blue-600" /> Update Legal Documents
+              </h3>
+              <button
+                onClick={() => setShowDocsModal(false)}
+                className="text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-2 transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateDocs} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  National ID Number
+                </label>
+                <input
+                  type="text"
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  placeholder="e.g. 12345678"
+                  value={docsForm.id_no}
+                  onChange={(e) =>
+                    setDocsForm({ ...docsForm, id_no: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Driving License Number
+                </label>
+                <input
+                  type="text"
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  placeholder="e.g. DL-123456"
+                  value={docsForm.license_no}
+                  onChange={(e) =>
+                    setDocsForm({ ...docsForm, license_no: e.target.value })
+                  }
+                />
+              </div>
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowDocsModal(false)}
+                  className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingDocs}
+                  className="flex-1 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition disabled:opacity-70 flex justify-center items-center"
+                >
+                  {isSubmittingDocs ? (
+                    <Loader size={18} className="animate-spin" />
+                  ) : (
+                    "Save Updates"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* --- DRIVER VIEW DETAILS MODAL --- */}
       {showDetailsModal && selectedDetail && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -242,7 +352,6 @@ const CollectorDashboard = () => {
                       Customer Name
                     </p>
                     <p className="text-gray-900 font-bold text-lg">
-                      {/* Try found user first, then job details */}
                       {selectedDetailUser?.full_name ||
                         selectedDetail.user_full_name ||
                         "Resident"}
@@ -254,15 +363,11 @@ const CollectorDashboard = () => {
                     </p>
                     <div className="flex items-center gap-2">
                       <p className="text-gray-900 font-bold">
-                        {/* THE FIX: Check found user's phone, then fallback */}
-                        {selectedDetailUser?.phone ||
-                          selectedDetail.user_phone ||
-                          "No Phone"}
+                        {getUserPhone(selectedDetail) || "No Phone"}
                       </p>
-                      {(selectedDetailUser?.phone ||
-                        selectedDetail.user_phone) && (
+                      {getUserPhone(selectedDetail) && (
                         <a
-                          href={`tel:${selectedDetailUser?.phone || selectedDetail.user_phone}`}
+                          href={`tel:${getUserPhone(selectedDetail)}`}
                           className="bg-green-500 text-white p-1.5 rounded-full hover:bg-green-600 shadow-sm"
                           title="Call Customer"
                         >
@@ -543,6 +648,12 @@ const CollectorDashboard = () => {
                                                 {job.pickup_address ||
                                                   job.region}
                                               </p>
+                                              {getUserPhone(job) && (
+                                                <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
+                                                  <Phone size={10} />{" "}
+                                                  {getUserPhone(job)}
+                                                </p>
+                                              )}
                                             </div>
                                           </div>
                                         </td>
@@ -570,7 +681,17 @@ const CollectorDashboard = () => {
                                         </td>
                                         <td className="p-4">
                                           <div className="flex gap-2">
-                                            {/* VIEW DETAILS BUTTON (NEW) */}
+                                            {/* Call User Button */}
+                                            {job.user_phone && (
+                                              <a
+                                                href={`tel:${job.user_phone}`}
+                                                className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
+                                                title="Call User"
+                                              >
+                                                <Phone size={18} />
+                                              </a>
+                                            )}
+
                                             <button
                                               onClick={() =>
                                                 openDetailsModal(job)
@@ -581,7 +702,6 @@ const CollectorDashboard = () => {
                                               <Eye size={18} />
                                             </button>
 
-                                            {/* Route to Resident */}
                                             <button
                                               onClick={() =>
                                                 openGoogleMaps(
@@ -911,11 +1031,24 @@ const CollectorDashboard = () => {
                             </div>
                           </div>
                         </div>
+
+                        {/* --- EDIT DOCUMENTS SECTION --- */}
                         <div className="mt-8 pt-6 border-t border-gray-100">
-                          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                            <ShieldCheck size={18} className="text-blue-600" />{" "}
-                            Legal Documents
-                          </h3>
+                          <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                              <ShieldCheck
+                                size={18}
+                                className="text-blue-600"
+                              />{" "}
+                              Legal Documents
+                            </h3>
+                            <button
+                              onClick={openEditDocs}
+                              className="text-xs flex items-center gap-1.5 bg-blue-50 text-blue-600 font-bold px-3 py-1.5 rounded-lg hover:bg-blue-100 transition shadow-sm border border-blue-100"
+                            >
+                              <Edit size={14} /> Update Docs
+                            </button>
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                               <p className="text-xs text-gray-400 uppercase font-bold mb-1">
