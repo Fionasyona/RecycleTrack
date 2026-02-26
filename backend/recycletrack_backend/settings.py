@@ -3,6 +3,7 @@ Django settings for recycletrack_backend project.
 Finalized for React + JWT + MySQL configuration.
 """
 
+
 from pathlib import Path
 from datetime import timedelta
 import os

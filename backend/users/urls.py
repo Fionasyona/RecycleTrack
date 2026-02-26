@@ -29,13 +29,12 @@ from .views import (
     get_notifications,
     mark_notifications_read,
     bill_collection_job,
-    
-    # NEW IMPORTS
     initiate_withdrawal,
     get_pending_withdrawals,
-    get_approved_withdrawals, # <--- Added this
+    get_approved_withdrawals,
     approve_withdrawal,
-    reject_withdrawal
+    reject_withdrawal,
+    get_job_reports_metrics # <--- IMPORT IS HERE
 )
 
 urlpatterns = [
@@ -73,9 +72,13 @@ urlpatterns = [
     
     # --- NEW: ADMIN WITHDRAWAL MANAGEMENT ---
     path('custom-admin/withdrawals/pending/', get_pending_withdrawals, name='admin_withdrawals_pending'),
-    path('custom-admin/withdrawals/approved/', get_approved_withdrawals, name='admin_withdrawals_approved'), # <--- Added this
+    path('custom-admin/withdrawals/approved/', get_approved_withdrawals, name='admin_withdrawals_approved'),
     path('custom-admin/withdrawals/<int:pk>/approve/', approve_withdrawal, name='admin_withdrawals_approve'),
     path('custom-admin/withdrawals/<int:pk>/reject/', reject_withdrawal, name='admin_withdrawals_reject'),
+
+    # --- REPORTS & METRICS ---
+    # FIXED: Changed 'admin/' to 'custom-admin/' to match the fetch URL
+    path('custom-admin/reports/job-metrics/', get_job_reports_metrics, name='admin_job_metrics'), 
 
     # --- DRIVER/COLLECTOR WORKFLOW ---
     path('driver/register-docs/', register_driver_docs, name='register_driver_docs'),

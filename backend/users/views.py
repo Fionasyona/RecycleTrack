@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import F, Sum, Q 
+from django.db.models import F, Sum, Q, Count # <--- ADDED 'Count' HERE
 from decimal import Decimal
 from .serializers import (
     UserSerializer, 
@@ -493,7 +493,7 @@ def get_approved_withdrawals(request):
     return Response(serializer.data)
 
 # --- APPROVE WITHDRAWAL (FIXED) ---
-@csrf_exempt  # <--- FIX: Bypasses CSRF check for this specific view
+@csrf_exempt  
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAdminUser])
@@ -515,7 +515,7 @@ def approve_withdrawal(request, pk):
     return Response({'message': 'Approved & Paid'})
 
 # --- REJECT WITHDRAWAL (FIXED) ---
-@csrf_exempt  # <--- FIX: Bypasses CSRF check for this specific view
+@csrf_exempt  
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAdminUser])
@@ -604,4 +604,35 @@ def get_notifications(request):
 @permission_classes([IsAuthenticated])
 def mark_notifications_read(request):
     Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
-    return Response({"message": "All marked as read"})
+    return Response({"message": "All marked as read"}) 
+
+
+# --- NEW: REPORTS & METRICS ---
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def get_job_reports_metrics(request):
+    """
+    Returns aggregated counts of PickupRequests based on their status.
+    """
+    total_jobs = PickupRequest.objects.count()
+    status_counts = PickupRequest.objects.values('status').annotate(count=Count('status'))
+
+    metrics = {
+        "pending": 0,
+        "assigned": 0,
+        "completed": 0, 
+        "total": total_jobs
+    }
+
+    for item in status_counts:
+        status = item['status']
+        count = item['count']
+
+        if status == 'pending':
+            metrics['pending'] += count
+        elif status == 'assigned':
+            metrics['assigned'] += count
+        elif status in ['collected', 'verified', 'paid']:
+            metrics['completed'] += count
+
+    return Response(metrics)
